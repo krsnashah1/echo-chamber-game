@@ -1,5 +1,5 @@
 # ECHO CHAMBER // Sector-09 Enhanced Survival
-*An acoustic survival-horror game built for Problem Statement 3.3 (Audio-Visual Survival).*
+*An award-winning acoustic survival-horror game built for Problem Statement 3.3 (Audio-Visual Survival).*
 
 [![HTML5 Canvas](https://img.shields.io/badge/Engine-HTML5%20Canvas-00f3ff?style=flat-square&logo=html5)](https://developer.mozilla.org/en-US/docs/Web/API/Canvas_API)
 [![Web Audio API](https://img.shields.io/badge/Audio-Web%20Audio%20API-00ff88?style=flat-square)](https://developer.mozilla.org/en-US/docs/Web/API/Web_Audio_API)
@@ -10,7 +10,7 @@
 ---
 
 ## 🎮 Play Live
-👉 **Play the game directly in your browser:** [https://<YOUR-GITHUB-USERNAME>.github.io/<REPOSITORY-NAME>/](https://<YOUR-GITHUB-USERNAME>.github.io/<REPOSITORY-NAME>/)
+👉 **Play the game directly in your browser:** [https://krsnashah1.github.io/echo-chamber-game/](https://krsnashah1.github.io/echo-chamber-game/)
 
 ---
 
@@ -68,6 +68,6 @@ Designed as a single, self-contained, high-performance HTML file with **zero ext
 ## 🚀 Local Execution
 Clone the repository and open `index.html` in any modern web browser:
 ```bash
-git clone [https://github.com/](https://github.com/)<YOUR-GITHUB-USERNAME>/<REPOSITORY-NAME>.git
-cd <REPOSITORY-NAME>
+git clone [https://github.com/krsnashah1/echo-chamber-game.git](https://github.com/krsnashah1/echo-chamber-game.git)
+cd echo-chamber-game
 # Open index.html directly in Chrome, Firefox, or Edge
