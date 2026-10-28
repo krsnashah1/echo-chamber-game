@@ -1,0 +1,2406 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>3.3 ECHO CHAMBER // Acoustic Survival Horror</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@500;700;900&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --cyan-glow: #00f3ff;
+            --red-glow: #ff1e42;
+            --green-glow: #00ff88;
+            --amber-glow: #ffb700;
+        }
+        * {
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            background-color: #020305;
+            color: #c8f7ff;
+            font-family: 'Share Tech Mono', monospace;
+            overflow: hidden;
+        }
+        .font-display {
+            font-family: 'Orbitron', sans-serif;
+        }
+        /* CRT Scanline & Vignette Overlay */
+        .crt-overlay {
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            z-index: 40;
+            background: 
+                linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.35) 50%), 
+                radial-gradient(circle at center, transparent 55%, rgba(0, 0, 0, 0.85) 100%);
+            background-size: 100% 4px, 100% 100%;
+        }
+        .hud-panel {
+            background: rgba(5, 11, 18, 0.82);
+            border: 1px solid rgba(0, 243, 255, 0.28);
+            box-shadow: 0 0 20px rgba(0, 243, 255, 0.08), inset 0 0 12px rgba(0, 243, 255, 0.05);
+            backdrop-filter: blur(6px);
+        }
+        .hud-btn {
+            background: rgba(0, 243, 255, 0.08);
+            border: 1px solid rgba(0, 243, 255, 0.4);
+            transition: all 0.15s ease;
+        }
+        .hud-btn:hover {
+            background: rgba(0, 243, 255, 0.22);
+            box-shadow: 0 0 12px rgba(0, 243, 255, 0.45);
+            transform: translateY(-1px);
+        }
+        .hud-btn:active {
+            transform: translateY(1px);
+        }
+        @keyframes pulse-danger {
+            0%, 100% { opacity: 1; text-shadow: 0 0 12px #ff1e42; }
+            50% { opacity: 0.45; text-shadow: 0 0 4px #ff1e42; }
+        }
+        .danger-blink {
+            animation: pulse-danger 0.8s infinite;
+        }
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            cursor: crosshair;
+        }
+    </style>
+</head>
+<body oncontextmenu="return false;">
+
+    <!-- CRT Post-Processing Layer -->
+    <div class="crt-overlay"></div>
+
+    <!-- TOP TACTICAL DIEGETIC HUD -->
+    <header class="fixed top-0 left-0 right-0 z-30 p-2 sm:p-4 pointer-events-none flex flex-wrap items-center justify-between gap-2">
+        <!-- Left: Facility & Keycards -->
+        <div class="hud-panel px-3 py-2 rounded flex items-center gap-4 pointer-events-auto">
+            <div>
+                <div class="text-[10px] tracking-widest text-cyan-400/70 uppercase">BIO-ACOUSTIC SECTOR 09</div>
+                <div class="font-display text-sm sm:text-base font-bold tracking-wider text-cyan-300 flex items-center gap-2">
+                    <span class="inline-block w-2 h-2 rounded-full bg-cyan-400 animate-ping"></span>
+                    ECHO CHAMBER
+                </div>
+            </div>
+            <div class="h-8 w-[1px] bg-cyan-500/30"></div>
+            <!-- 3 Security Keycards Status -->
+            <div>
+                <div class="text-[10px] tracking-widest text-cyan-400/70 uppercase mb-1">CONTAINMENT KEYS (<span id="keyCountText">0/3</span>)</div>
+                <div class="flex items-center gap-2" id="keycardSlots">
+                    <div id="key-alpha" class="px-2 py-0.5 text-xs rounded border border-cyan-500/30 text-cyan-600 bg-black/50 flex items-center gap-1">
+                        <span>α</span><span class="hidden sm:inline">ALPHA</span>
+                    </div>
+                    <div id="key-beta" class="px-2 py-0.5 text-xs rounded border border-cyan-500/30 text-cyan-600 bg-black/50 flex items-center gap-1">
+                        <span>β</span><span class="hidden sm:inline">BETA</span>
+                    </div>
+                    <div id="key-gamma" class="px-2 py-0.5 text-xs rounded border border-cyan-500/30 text-cyan-600 bg-black/50 flex items-center gap-1">
+                        <span>γ</span><span class="hidden sm:inline">GAMMA</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Center: Acoustic Waveform & Creature State -->
+        <div class="hud-panel px-3 py-2 rounded flex items-center gap-4 pointer-events-auto">
+            <!-- Noise Output Waveform -->
+            <div class="flex items-center gap-2">
+                <div>
+                    <div class="text-[10px] tracking-widest text-cyan-400/70 uppercase">NOISE dB</div>
+                    <div id="stanceBadge" class="text-xs font-bold text-cyan-300">WALKING</div>
+                </div>
+                <canvas id="waveformCanvas" width="90" height="32" class="w-[90px] h-[32px] bg-black/60 rounded border border-cyan-500/20"></canvas>
+            </div>
+            <div class="h-8 w-[1px] bg-cyan-500/30"></div>
+            <!-- Creature Alert State -->
+            <div class="min-w-[115px]">
+                <div class="text-[10px] tracking-widest text-cyan-400/70 uppercase">SPECIMEN STATUS</div>
+                <div id="creatureStateBadge" class="font-display text-xs sm:text-sm font-bold tracking-wider text-emerald-400">
+                    DORMANT
+                </div>
+            </div>
+        </div>
+
+        <!-- Right: Decoys, Hiding Status & Controls -->
+        <div class="hud-panel px-3 py-2 rounded flex items-center gap-3 pointer-events-auto">
+            <div>
+                <div class="text-[10px] tracking-widest text-cyan-400/70 uppercase">DECOY RADIOS [E / R-CLICK]</div>
+                <div class="flex items-center gap-1.5 mt-0.5" id="decoyIcons">
+                    <!-- Populated dynamically -->
+                </div>
+            </div>
+            <div class="h-8 w-[1px] bg-cyan-500/30"></div>
+            <div id="hideStatusBadge" class="px-2.5 py-1 rounded text-xs border border-cyan-500/30 bg-cyan-950/30 text-cyan-300">
+                EXPOSED
+            </div>
+            <button id="muteBtn" class="hud-btn px-2.5 py-1.5 rounded text-xs text-cyan-300 font-bold" title="Toggle Audio">
+                SFX: ON
+            </button>
+            <button id="restartBtn" class="hud-btn px-2.5 py-1.5 rounded text-xs text-amber-300 border-amber-400/50 font-bold" title="Restart [R]">
+                RESET [R]
+            </button>
+        </div>
+    </header>
+    <div class="fixed top-[84px] right-2 sm:right-4 z-30 hud-panel px-3 py-1.5 rounded flex items-center gap-3 text-xs pointer-events-auto">
+        <span class="text-fuchsia-300">&#9670; GEMS <b id="gemTxt">0</b></span>
+        <span class="text-cyan-200">HP <b id="hpTxt">100</b></span>
+        <span class="text-rose-300">HOSTILES <b id="hostTxt">3</b></span>
+        <span class="text-amber-300">LANCE <b id="cellTxt">3</b></span>
+        <button id="storeBtn" onclick="openStore()" class="hud-btn px-2 py-1 rounded font-bold text-fuchsia-300">STORE [B]</button>
+    </div>
+
+    <!-- CONTEXTUAL INTERACTION PROMPT -->
+    <div id="contextPrompt" class="fixed bottom-20 left-1/2 -translate-x-1/2 z-30 pointer-events-none hidden">
+        <div class="hud-panel px-4 py-2 rounded-full text-xs sm:text-sm tracking-wider text-cyan-200 border border-cyan-400/60 shadow-lg flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full bg-cyan-400 animate-ping"></span>
+            <span id="contextPromptText">PRESS [F] TO ENTER STASIS LOCKER</span>
+        </div>
+    </div>
+
+    <!-- BOTTOM TACTICAL CONTROLS BAR (Desktop & Touch friendly) -->
+    <footer class="fixed bottom-0 left-0 right-0 z-30 p-2 sm:p-3 pointer-events-none flex flex-wrap items-center justify-between gap-2">
+        <div class="hud-panel px-3 py-1.5 rounded text-[11px] text-cyan-300/80 hidden md:flex items-center gap-4 pointer-events-auto">
+            <span><strong class="text-cyan-200">[W A D / ARROWS]</strong> Move</span>
+            <span><strong class="text-cyan-200">[SPACE / L-CLICK]</strong> Sonar Pulse</span>
+            <span><strong class="text-emerald-300">[E / R-CLICK]</strong> Throw Decoy Radio</span>
+            <span><strong class="text-amber-300">[F]</strong> Hide in Locker</span>
+            <span><strong class="text-cyan-200">[SHIFT]</strong> Sprint (Loud)</span>
+            <span><strong class="text-cyan-200">[C]</strong> Crouch (Silent)</span>
+            <span><strong class="text-fuchsia-300">[B]</strong> Store</span>
+            <span><strong class="text-amber-300">[Q / MID-CLICK]</strong> Sonic Lance</span>
+        </div>
+
+        <!-- Mobile / Quick Action Buttons -->
+        <div class="flex items-center gap-2 mx-auto md:mx-0 pointer-events-auto">
+            <button id="btnPulse" class="hud-btn px-3 py-2 rounded text-xs font-bold text-cyan-300 flex items-center gap-1.5">
+                <span>◉</span> SONAR [SPACE]
+            </button>
+            <button id="btnDecoy" class="hud-btn px-3 py-2 rounded text-xs font-bold text-emerald-300 border-emerald-400/50 flex items-center gap-1.5">
+                <span>(((</span> DECOY [E]
+            </button>
+            <button id="btnHide" class="hud-btn px-3 py-2 rounded text-xs font-bold text-amber-300 border-amber-400/50 flex items-center gap-1.5">
+                <span>⛨</span> HIDE [F]
+            </button>
+            <button id="btnCrouch" class="hud-btn px-3 py-2 rounded text-xs font-bold text-cyan-200 flex items-center gap-1.5">
+                CROUCH [C]
+            </button>
+            <button id="btnLance" class="hud-btn px-3 py-2 rounded text-xs font-bold text-amber-300 border-amber-400/50" onclick="fireLance()">LANCE [Q]</button>
+        </div>
+    </footer>
+
+    <!-- MAIN GAME CANVAS -->
+    <canvas id="gameCanvas"></canvas>
+
+    <div id="confirmModal" class="hidden fixed inset-0 z-[60] flex items-center justify-center bg-black/80 p-4">
+        <div class="hud-panel max-w-sm w-full p-6 rounded border border-amber-400/60 text-center">
+            <div class="font-display text-lg text-amber-300 mb-2">RESTART MISSION?</div>
+            <p class="text-sm text-cyan-100/80 mb-5">Are you sure you want to restart? Progress will be lost.</p>
+            <div class="flex gap-3">
+                <button onclick="cancelRestart()" class="hud-btn flex-1 py-2 rounded font-bold text-cyan-200">KEEP PLAYING [N]</button>
+                <button onclick="confirmRestart()" class="hud-btn flex-1 py-2 rounded font-bold text-rose-300">RESTART [Y]</button>
+            </div>
+        </div>
+    </div>
+    <div id="storeModal" class="hidden fixed inset-0 z-[60] flex items-center justify-center bg-black/80 p-4">
+        <div class="hud-panel max-w-md w-full p-5 rounded border border-fuchsia-400/50">
+            <div class="flex justify-between items-center mb-3">
+                <div class="font-display text-lg text-fuchsia-300">FIELD STORE</div>
+                <div class="text-fuchsia-300">&#9670; <b id="storeGems">0</b> GEMS</div>
+            </div>
+            <div id="storeItems" class="space-y-2"></div>
+            <div class="text-[10px] text-cyan-300/60 mt-2">Press 1-5 to buy. Game is paused while shopping.</div>
+            <button onclick="closeStore()" class="hud-btn w-full mt-3 py-2 rounded font-bold text-cyan-200">CLOSE [B / ESC]</button>
+        </div>
+    </div>
+    <div id="hackPanel" class="hidden fixed top-24 left-1/2 -translate-x-1/2 z-[45] hud-panel rounded p-3 w-[310px] text-center border border-cyan-400/60">
+        <div id="hackTitle" class="font-display text-xs text-cyan-300 mb-1"></div>
+        <div id="hackMsg" class="text-[11px] text-cyan-100/80 mb-2 min-h-[16px]"></div>
+        <div id="hackPads" class="grid grid-cols-4 gap-2 mb-2"></div>
+        <div class="text-[11px] text-amber-300">ATTEMPTS: <span id="hackAtt"></span></div>
+    </div>
+    <div id="tipBox" class="hidden fixed top-28 left-3 sm:left-4 z-30 hud-panel rounded p-3 max-w-xs border border-amber-400/70 pointer-events-none">
+        <div class="text-[10px] tracking-widest text-amber-300 danger-blink mb-1">// TACTICAL ADVISORY</div>
+        <div id="tipText" class="text-xs text-amber-100"></div>
+    </div>
+    <div id="logBox" class="hidden fixed bottom-24 left-1/2 -translate-x-1/2 z-30 hud-panel rounded p-3 w-[92%] max-w-xl border border-cyan-400/50 pointer-events-none">
+        <div id="logTitle" class="text-[10px] tracking-widest text-cyan-400 mb-1"></div>
+        <div id="logText" class="text-xs sm:text-sm text-cyan-100 leading-relaxed"></div>
+    </div>
+
+    <!-- START / BRIEFING / GAME OVER MODAL -->
+    <div id="modalOverlay" class="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4 backdrop-blur-md">
+        <div class="hud-panel max-w-xl w-full p-6 sm:p-8 rounded-lg border border-cyan-400/50 relative overflow-hidden">
+            <div class="text-xs tracking-[0.25em] text-cyan-400 uppercase mb-1">PROBLEM STATEMENT 3.3 // AUDIO-VISUAL SURVIVAL</div>
+            <h1 id="modalTitle" class="font-display text-2xl sm:text-4xl font-black tracking-wider text-cyan-300 mb-3">
+                ECHO CHAMBER
+            </h1>
+            <p id="modalSubtitle" class="text-sm text-cyan-100/80 leading-relaxed mb-5">
+                Power has failed across Sub-Level 09. Total darkness prevails. Use your suit's <strong>Acoustic Sonar Emitter</strong> to map the laboratory architecture—but beware: <span class="text-rose-400 font-semibold">Subject-89 is blind and hunts purely by sound.</span>
+            </p>
+
+            <!-- Briefing Grid -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs mb-6">
+                <div class="p-3 rounded bg-cyan-950/30 border border-cyan-500/30">
+                    <div class="font-bold text-cyan-300 mb-1">1. SONAR ECHOLOCATION</div>
+                    <p class="text-cyan-100/70">Press <strong>SPACE</strong> or <strong>Left-Click</strong> to emit a 360° cyan acoustic ring. Illuminated walls and items fade back into pitch black over 4 seconds.</p>
+                </div>
+                <div class="p-3 rounded bg-rose-950/30 border border-rose-500/30">
+                    <div class="font-bold text-rose-300 mb-1">2. NOISE vs. SURVIVAL</div>
+                    <p class="text-rose-100/70">Sonar pings and <strong>SHIFT</strong> sprinting alert the creature, triggering a crimson counter-pulse. Use <strong>C</strong> to crouch-walk silently.</p>
+                </div>
+                <div class="p-3 rounded bg-emerald-950/30 border border-emerald-500/30">
+                    <div class="font-bold text-emerald-300 mb-1">3. DECOYS & STASIS PODS</div>
+                    <p class="text-emerald-100/70">Press <strong>E / Right-Click</strong> to throw a Decoy Radio toward your cursor (5s green lure). Press <strong>F</strong> near blue lockers to hide inside.</p>
+                </div>
+                <div class="p-3 rounded bg-amber-950/30 border border-amber-500/30">
+                    <div class="font-bold text-amber-300 mb-1">4. THREE KEYCARDS & AIRLOCK</div>
+                    <p class="text-amber-100/70">Recover Keycards <strong>Alpha, Beta, and Gamma</strong> across the sectors, then reach the Southern Containment Airlock to escape.</p>
+                </div>
+            </div>
+
+            <div id="modalStats" class="hidden mb-5 p-3 rounded bg-black/60 border border-cyan-500/30 text-xs text-cyan-200 flex justify-around">
+                <div>TIME SURVIVED: <strong id="statTime" class="text-cyan-400">0s</strong></div>
+                <div>SONAR PINGS: <strong id="statPings" class="text-cyan-400">0</strong></div>
+                <div>KEYS FOUND: <strong id="statKeys" class="text-cyan-400">0/3</strong></div>
+            </div>
+
+            <button id="startBtn" class="w-full py-3.5 rounded font-display font-bold tracking-widest text-sm sm:text-base bg-cyan-500/20 hover:bg-cyan-500/35 text-cyan-200 border border-cyan-400 shadow-[0_0_25px_rgba(0,243,255,0.3)] transition-all">
+                INITIALIZE ACOUSTIC VISOR [ENTER / CLICK]
+            </button>
+            <button id="mercyBtn" class="hidden w-full mt-3 py-2.5 rounded font-display font-bold tracking-wider text-xs bg-amber-500/15 hover:bg-amber-500/30 text-amber-200 border border-amber-400/70"></button>
+        </div>
+    </div>
+
+    <script>
+        /**************************************************************************
+         * 1. PROCEDURAL WEB AUDIO ENGINE (Zero External Assets)
+         * Generates Submarine Sonar Ping, Heartbeat Thump, Radio Static, Locker Clank & Synth Drone
+         **************************************************************************/
+        class SoundEngine {
+            constructor() {
+                this.ctx = null;
+                this.muted = false;
+                this.droneGain = null;
+                this.lastHeartbeat = 0;
+            }
+
+            init() {
+                if (this.ctx) {
+                    if (this.ctx.state === 'suspended') this.ctx.resume();
+                    return;
+                }
+                const AudioCtx = window.AudioContext || window.webkitAudioContext;
+                this.ctx = new AudioCtx();
+                this.startAmbientDrone();
+            }
+
+            startAmbientDrone() {
+                if (!this.ctx) return;
+                const osc1 = this.ctx.createOscillator();
+                const osc2 = this.ctx.createOscillator();
+                const filter = this.ctx.createBiquadFilter();
+                this.droneGain = this.ctx.createGain();
+
+                osc1.type = 'sawtooth';
+                osc1.frequency.value = 46.25; // Deep F#1 sub-bass lab hum
+                osc2.type = 'triangle';
+                osc2.frequency.value = 69.30; // C#2 fifth interval
+
+                filter.type = 'lowpass';
+                filter.frequency.value = 135;
+
+                this.droneGain.gain.value = this.muted ? 0 : 0.07;
+
+                osc1.connect(filter);
+                osc2.connect(filter);
+                filter.connect(this.droneGain);
+                this.droneGain.connect(this.ctx.destination);
+
+                osc1.start();
+                osc2.start();
+            }
+
+            toggleMute() {
+                this.muted = !this.muted;
+                if (this.droneGain && this.ctx) {
+                    this.droneGain.gain.setTargetAtTime(this.muted ? 0 : 0.07, this.ctx.currentTime, 0.1);
+                }
+                return this.muted;
+            }
+
+            // Deep submarine-style acoustic sonar ping with harmonic tail
+            playSonarPing(isLoud = true) {
+                if (!this.ctx || this.muted) return;
+                const now = this.ctx.currentTime;
+
+                const osc = this.ctx.createOscillator();
+                const sub = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(isLoud ? 1320 : 880, now);
+                osc.frequency.exponentialRampToValueAtTime(isLoud ? 520 : 440, now + 0.9);
+
+                sub.type = 'triangle';
+                sub.frequency.setValueAtTime(220, now);
+                sub.frequency.exponentialRampToValueAtTime(85, now + 0.6);
+
+                gain.gain.setValueAtTime(0.001, now);
+                gain.gain.linearRampToValueAtTime(isLoud ? 0.24 : 0.08, now + 0.02);
+                gain.gain.exponentialRampToValueAtTime(0.0008, now + (isLoud ? 1.35 : 0.55));
+
+                osc.connect(gain);
+                sub.connect(gain);
+                gain.connect(this.ctx.destination);
+
+                osc.start(now);
+                sub.start(now);
+                osc.stop(now + 1.4);
+                sub.stop(now + 1.4);
+            }
+
+            // Monster crimson roar / counter-pulse
+            playMonsterRoar() {
+                if (!this.ctx || this.muted) return;
+                const now = this.ctx.currentTime;
+
+                const osc = this.ctx.createOscillator();
+                const mod = this.ctx.createOscillator();
+                const modGain = this.ctx.createGain();
+                const gain = this.ctx.createGain();
+
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(150, now);
+                osc.frequency.exponentialRampToValueAtTime(42, now + 0.95);
+
+                mod.frequency.value = 34;
+                modGain.gain.value = 45;
+                mod.connect(modGain);
+                modGain.connect(osc.frequency);
+
+                gain.gain.setValueAtTime(0.28, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 1.0);
+
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+
+                osc.start(now);
+                mod.start(now);
+                osc.stop(now + 1.05);
+                mod.stop(now + 1.05);
+            }
+
+            // Dynamic double-thump biological heartbeat
+            playHeartbeat(intensity = 0.5) {
+                if (!this.ctx || this.muted) return;
+                const now = this.ctx.currentTime;
+
+                const triggerThump = (offset, freq, vol) => {
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(freq, now + offset);
+                    osc.frequency.exponentialRampToValueAtTime(28, now + offset + 0.16);
+
+                    gain.gain.setValueAtTime(vol, now + offset);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + offset + 0.18);
+
+                    osc.connect(gain);
+                    gain.connect(this.ctx.destination);
+                    osc.start(now + offset);
+                    osc.stop(now + offset + 0.19);
+                };
+
+                const volume = Math.min(0.35, 0.08 + intensity * 0.25);
+                triggerThump(0, 75, volume);
+                triggerThump(0.18, 60, volume * 0.7);
+            }
+
+            // Decoy radio static burst + emerald chime
+            playRadioDecoy() {
+                if (!this.ctx || this.muted) return;
+                const now = this.ctx.currentTime;
+
+                // White noise buffer burst
+                const bufferSize = this.ctx.sampleRate * 0.22;
+                const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+                const data = buffer.getChannelData(0);
+                for (let i = 0; i < bufferSize; i++) {
+                    data[i] = (Math.random() * 2 - 1) * 0.4;
+                }
+
+                const noise = this.ctx.createBufferSource();
+                noise.buffer = buffer;
+
+                const filter = this.ctx.createBiquadFilter();
+                filter.type = 'bandpass';
+                filter.frequency.value = 1400;
+
+                const gain = this.ctx.createGain();
+                gain.gain.setValueAtTime(0.14, now);
+                gain.gain.exponentialRampToValueAtTime(0.005, now + 0.22);
+
+                noise.connect(filter);
+                filter.connect(gain);
+                gain.connect(this.ctx.destination);
+                noise.start(now);
+
+                // Electronic carrier beep
+                const osc = this.ctx.createOscillator();
+                const beepGain = this.ctx.createGain();
+                osc.type = 'square';
+                osc.frequency.setValueAtTime(980, now);
+                osc.frequency.setValueAtTime(1310, now + 0.08);
+                beepGain.gain.setValueAtTime(0.08, now);
+                beepGain.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
+
+                osc.connect(beepGain);
+                beepGain.connect(this.ctx.destination);
+                osc.start(now);
+                osc.stop(now + 0.26);
+            }
+
+            // Metallic locker door clank
+            playLockerClank() {
+                if (!this.ctx || this.muted) return;
+                const now = this.ctx.currentTime;
+                const freqs = [240, 385, 610, 890];
+                freqs.forEach((f, idx) => {
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+                    osc.type = idx % 2 === 0 ? 'square' : 'triangle';
+                    osc.frequency.setValueAtTime(f, now);
+                    osc.frequency.exponentialRampToValueAtTime(f * 0.5, now + 0.18);
+
+                    gain.gain.setValueAtTime(0.06, now);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.19);
+                    osc.connect(gain);
+                    gain.connect(this.ctx.destination);
+                    osc.start(now);
+                    osc.stop(now + 0.2);
+                });
+            }
+
+            // Keycard / Item pickup chime
+            playKeycardPickup() {
+                if (!this.ctx || this.muted) return;
+                const now = this.ctx.currentTime;
+                const notes = [587.33, 880, 1174.66]; // D5, A5, D6
+                notes.forEach((freq, i) => {
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(freq, now + i * 0.09);
+                    gain.gain.setValueAtTime(0.16, now + i * 0.09);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.09 + 0.35);
+                    osc.connect(gain);
+                    gain.connect(this.ctx.destination);
+                    osc.start(now + i * 0.09);
+                    osc.stop(now + i * 0.09 + 0.36);
+                });
+            }
+        }
+
+        const audio = new SoundEngine();
+
+        /**************************************************************************
+         * 2. WORLD GEOMETRY & SECTOR MAP (2200 x 1500 Multi-Room Laboratory)
+         * Subdivided into discrete wall segments so acoustic wavefronts light up
+         * individual wall sections with 4.0-second phosphor persistence.
+         **************************************************************************/
+        const WORLD_W = 2200;
+        const WORLD_H = 1500;
+        const FADE_DURATION = 4.0; // Mandatory 4-second decay back into pitch darkness
+
+        // Raw architectural blueprints (x1, y1, x2, y2, type)
+        const RAW_WALLS = [
+            // Outer Containment Perimeter
+            [80, 80, 2120, 80], [2120, 80, 2120, 1420],
+            [2120, 1420, 1220, 1420], [980, 1420, 80, 1420], // Airlock gap at bottom center (980..1220)
+            [80, 1420, 80, 80],
+
+            // Sector A: Cryo-Stasis Wing (Top-Left)
+            [80, 480, 480, 480], [600, 480, 760, 480],
+            [760, 80, 760, 250], [760, 360, 760, 480],
+            [340, 80, 340, 280], [220, 280, 520, 280],
+
+            // Sector B: Central Acoustic Hub (Center)
+            [760, 620, 990, 620], [1130, 620, 1440, 620],
+            [760, 620, 760, 820], [760, 940, 760, 1120],
+            [1440, 620, 1440, 820], [1440, 940, 1440, 1120],
+            [760, 1120, 1020, 1120], [1180, 1120, 1440, 1120],
+            // Central Reactor Pillar
+            [1020, 790, 1180, 790], [1180, 790, 1180, 950],
+            [1180, 950, 1020, 950], [1020, 950, 1020, 790],
+
+            // Sector C: Bio-Research Labs (Top-Right)
+            [1440, 80, 1440, 260], [1440, 380, 1440, 480],
+            [1440, 480, 1680, 480], [1800, 480, 2120, 480],
+            [1780, 80, 1780, 300],
+
+            // Sector D: Lower West Generator & Tunnels (Bottom-Left)
+            [80, 940, 360, 940], [490, 940, 760, 940],
+            [420, 940, 420, 1180], [420, 1300, 420, 1420],
+            [240, 660, 560, 660], [240, 660, 240, 820],
+
+            // Sector E: Lower East Server & Quarantine (Bottom-Right)
+            [1440, 940, 1690, 940], [1820, 940, 2120, 940],
+            [1760, 940, 1760, 1160], [1760, 1280, 1760, 1420],
+            [1640, 660, 1940, 660], [1940, 660, 1940, 820]
+        ];
+
+        // Subdivide walls into ~38px segments for crisp localized wavefront illumination
+        let wallSegments = [];
+        let wallBoxes = []; // Thickened collision boxes for smooth circle-vs-segment physics
+
+        function buildWallGeometry() {
+            wallSegments = [];
+            wallBoxes = [];
+            const maxSegLen = 36;
+
+            RAW_WALLS.forEach(([x1, y1, x2, y2]) => {
+                const dx = x2 - x1;
+                const dy = y2 - y1;
+                const totalLen = Math.hypot(dx, dy);
+                const steps = Math.max(1, Math.ceil(totalLen / maxSegLen));
+                for (let i = 0; i < steps; i++) {
+                    const t0 = i / steps;
+                    const t1 = (i + 1) / steps;
+                    const sx1 = x1 + dx * t0;
+                    const sy1 = y1 + dy * t0;
+                    const sx2 = x1 + dx * t1;
+                    const sy2 = y1 + dy * t1;
+                    wallSegments.push({
+                        x1: sx1, y1: sy1,
+                        x2: sx2, y2: sy2,
+                        mx: (sx1 + sx2) * 0.5,
+                        my: (sy1 + sy2) * 0.5,
+                        alpha: 0,
+                        tint: 'cyan' // 'cyan' | 'green' | 'red'
+                    });
+                }
+                wallBoxes.push({ x1, y1, x2, y2 });
+            });
+        }
+
+        // Architectural Floor Decals (Spore trails, hazard stripes, sector markings)
+        const FLOOR_DECALS = [
+            { x: 250, y: 200, label: 'SECTOR A // CRYO-LAB', kind: 'text' },
+            { x: 1100, y: 720, label: 'SECTOR B // ACOUSTIC CORE', kind: 'text' },
+            { x: 1860, y: 200, label: 'SECTOR C // BIO-CONTAINMENT', kind: 'text' },
+            { x: 250, y: 1280, label: 'SECTOR D // AUX GENERATOR', kind: 'text' },
+            { x: 1920, y: 1280, label: 'SECTOR E // QUARANTINE', kind: 'text' },
+            { x: 1100, y: 1350, label: '▼ AIRLOCK EXIT ▼', kind: 'hazard' },
+            // Spore/Blood trails
+            { x: 640, y: 540, r: 34, kind: 'spore' },
+            { x: 890, y: 590, r: 28, kind: 'spore' },
+            { x: 1320, y: 520, r: 42, kind: 'spore' },
+            { x: 1550, y: 840, r: 35, kind: 'spore' },
+            { x: 520, y: 1080, r: 38, kind: 'spore' },
+            { x: 1250, y: 1200, r: 30, kind: 'spore' }
+        ].map(d => ({ ...d, alpha: 0, tint: 'cyan' }));
+
+        /**************************************************************************
+         * 3. GAME STATE & ENTITIES
+         **************************************************************************/
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const waveCanvas = document.getElementById('waveformCanvas');
+        const waveCtx = waveCanvas.getContext('2d');
+
+        let gameState = 'MENU'; // 'MENU' | 'PLAYING' | 'WIN' | 'GAMEOVER'
+        let keys = {};
+        let mouseScreen = { x: 0, y: 0 };
+        let mouseWorld = { x: 0, y: 0 };
+        let camera = { x: 0, y: 0 };
+
+        let player = null;
+        let creature = null;
+        let sonarPulses = [];
+        let decoyRadios = [];
+        let keycards = [];
+        let lockers = [];
+        let radioPickups = [];
+        let exitDoor = { x1: 980, y1: 1420, x2: 1220, y2: 1420, mx: 1100, my: 1420, unlocked: false, alpha: 0.35 };
+
+        // Stats
+        let stats = {
+            startTime: 0,
+            pingsUsed: 0,
+            noiseLevel: 0,
+            stepTimer: 0
+        };
+
+        // Patrol waypoints for the hunting biological anomaly
+        const PATROL_WAYPOINTS = [
+            { x: 640, y: 340 },
+            { x: 1100, y: 540 },
+            { x: 1620, y: 340 },
+            { x: 1880, y: 820 },
+            { x: 1600, y: 1240 },
+            { x: 1100, y: 1220 },
+            { x: 600, y: 1220 },
+            { x: 580, y: 780 }
+        ];
+
+        function initGame() {
+            buildWallGeometry();
+
+            player = {
+                x: 200,
+                y: 200,
+                radius: 14,
+                angle: 0,
+                speedWalk: 155,
+                speedSprint: 255,
+                speedCrouch: 88,
+                crouching: false,
+                sprinting: false,
+                hiding: false,
+                lockerRef: null,
+                decoys: 3,
+                maxDecoys: 3,
+                keysCollected: 0,
+                lastSonarTime: 0
+            };
+
+            creature = {
+                x: 1620,
+                y: 840,
+                radius: 20,
+                angle: 0,
+                state: 'DORMANT', // 'DORMANT' (Patrol) | 'SEARCHING' | 'HUNTING'
+                speedPatrol: 105,
+                speedInvestigate: 165,
+                speedHunt: 228,
+                hearingRadius: 760,
+                targetX: PATROL_WAYPOINTS[0].x,
+                targetY: PATROL_WAYPOINTS[0].y,
+                waypointIdx: 0,
+                alertTimer: 0,
+                stepTimer: 0,
+                roarCooldown: 0,
+                alpha: 0, // Illuminated only by sonar or its own crimson pulse
+                tendrilPhase: 0
+            };
+
+            sonarPulses = [];
+            decoyRadios = [];
+
+            // 3 Mandatory Keycards in distinct sectors
+            keycards = [
+                { id: 'alpha', name: 'SECURITY CARD ALPHA', symbol: 'α', x: 1960, y: 210, collected: false, alpha: 0, phase: 0 },
+                { id: 'beta',  name: 'SECURITY CARD BETA',  symbol: 'β', x: 190,  y: 1290, collected: false, alpha: 0, phase: 1.5 },
+                { id: 'gamma', name: 'SECURITY CARD GAMMA', symbol: 'γ', x: 1960, y: 1290, collected: false, alpha: 0, phase: 3.1 }
+            ];
+
+            // Hiding Lockers / Stasis Pods across the facility
+            lockers = [
+                { x: 420, y: 130, w: 38, h: 38, alpha: 0, occupied: false },
+                { x: 690, y: 740, w: 38, h: 38, alpha: 0, occupied: false },
+                { x: 1510, y: 740, w: 38, h: 38, alpha: 0, occupied: false },
+                { x: 1690, y: 140, w: 38, h: 38, alpha: 0, occupied: false },
+                { x: 350, y: 1020, w: 38, h: 38, alpha: 0, occupied: false },
+                { x: 1690, y: 1020, w: 38, h: 38, alpha: 0, phase: 0, occupied: false },
+                { x: 1100, y: 1060, w: 38, h: 38, alpha: 0, occupied: false }
+            ];
+
+            // Rechargeable / Extra Radio Decoy Pickups
+            radioPickups = [
+                { x: 1100, y: 240, collected: false, alpha: 0 },
+                { x: 380, y: 760, collected: false, alpha: 0 },
+                { x: 1840, y: 740, collected: false, alpha: 0 },
+                { x: 920, y: 1290, collected: false, alpha: 0 }
+            ];
+
+            exitDoor.unlocked = false;
+            exitDoor.alpha = 0.4;
+
+            stats.startTime = performance.now();
+            stats.pingsUsed = 0;
+            stats.noiseLevel = 0.05;
+
+            camera.x = player.x - canvas.width / 2;
+            camera.y = player.y - canvas.height / 2;
+
+            updateHUD();
+
+            // Emit an initial welcome sonar pulse so the player immediately sees their starter room
+            emitSonarPulse(player.x, player.y, 650, 'cyan', false);
+        }
+
+        /**************************************************************************
+         * 4. ACOUSTIC SONAR WAVEFRONT & CREATURE HEARING LOGIC
+         **************************************************************************/
+        function emitSonarPulse(x, y, maxRadius, colorType = 'cyan', alertsMonster = true) {
+            sonarPulses.push({
+                x,
+                y,
+                radius: 8,
+                maxRadius,
+                speed: colorType === 'red' ? 540 : 490,
+                colorType, // 'cyan' (player) | 'green' (decoy radio) | 'red' (monster counter-pulse)
+                alertsMonster,
+                alertedMonsterAlready: false
+            });
+        }
+
+        function triggerPlayerSonar() {
+            if (gameState !== 'PLAYING') return;
+            const now = performance.now();
+            if (now - player.lastSonarTime < 380) return; // Brief cooldown
+            player.lastSonarTime = now;
+
+            stats.pingsUsed++;
+            stats.noiseLevel = 1.0;
+            audio.playSonarPing(true);
+            emitSonarPulse(player.x, player.y, 820 * player.sonarMult, 'cyan', true);
+        }
+
+        function throwDecoyRadio() {
+            if (gameState !== 'PLAYING' || player.hiding) return;
+            if (player.decoys <= 0) return;
+
+            player.decoys--;
+            updateHUD();
+            audio.playRadioDecoy();
+
+            const dx = mouseWorld.x - player.x;
+            const dy = mouseWorld.y - player.y;
+            const dist = Math.min(340, Math.hypot(dx, dy));
+            const angle = Math.atan2(dy, dx);
+
+            decoyRadios.push({
+                x: player.x,
+                y: player.y,
+                vx: Math.cos(angle) * (dist * 2.5),
+                vy: Math.sin(angle) * (dist * 2.5),
+                activeTime: 5.0, // Mandatory 5 seconds of pulsing green sound rings
+                pingTimer: 0.1,
+                alpha: 1.0
+            });
+        }
+
+        function toggleHideInLocker() {
+            if (gameState !== 'PLAYING') return;
+
+            if (player.hiding) {
+                // Exit locker
+                player.hiding = false;
+                if (player.lockerRef) player.lockerRef.occupied = false;
+                player.lockerRef = null;
+                audio.playLockerClank();
+                emitSonarPulse(player.x, player.y, 180, 'cyan', false);
+                updateHUD();
+                return;
+            }
+
+            // Find adjacent locker within 68px
+            let nearest = null;
+            let bestDist = 68;
+            for (const loc of lockers) {
+                const d = Math.hypot(player.x - loc.x, player.y - loc.y);
+                if (d < bestDist) {
+                    bestDist = d;
+                    nearest = loc;
+                }
+            }
+
+            if (nearest) {
+                player.hiding = true;
+                player.lockerRef = nearest;
+                nearest.occupied = true;
+                nearest.alpha = 1.0;
+                player.x = nearest.x;
+                player.y = nearest.y;
+                stats.noiseLevel = 0.02;
+                audio.playLockerClank();
+                updateHUD();
+            }
+        }
+
+        /**************************************************************************
+         * 5. PHYSICS & COLLISION HELPERS
+         **************************************************************************/
+        function distToSegment(px, py, x1, y1, x2, y2) {
+            const l2 = (x2 - x1) ** 2 + (y2 - y1) ** 2;
+            if (l2 === 0) return Math.hypot(px - x1, py - y1);
+            let t = ((px - x1) * (x2 - x1) + (py - y1) * (y2 - y1)) / l2;
+            t = Math.max(0, Math.min(1, t));
+            const projX = x1 + t * (x2 - x1);
+            const projY = y1 + t * (y2 - y1);
+            return {
+                dist: Math.hypot(px - projX, py - projY),
+                projX,
+                projY
+            };
+        }
+
+        function resolveWallCollisions(entity, wallThickness = 8) {
+            const minDist = entity.radius + wallThickness;
+
+            // Check all wall boxes + locked exit door
+            const allBarriers = (exitDoor.unlocked ? wallBoxes : [...wallBoxes, exitDoor]).concat(doors.filter(d => d.slide < 0.5));
+
+            for (let iter = 0; iter < 2; iter++) {
+                for (const w of allBarriers) {
+                    const res = distToSegment(entity.x, entity.y, w.x1, w.y1, w.x2, w.y2);
+                    if (res.dist < minDist) {
+                        const overlap = minDist - res.dist;
+                        let nx = entity.x - res.projX;
+                        let ny = entity.y - res.projY;
+                        const len = Math.hypot(nx, ny) || 1;
+                        entity.x += (nx / len) * overlap;
+                        entity.y += (ny / len) * overlap;
+                    }
+                }
+            }
+        }
+
+        /**************************************************************************
+         * 6. MAIN REAL-TIME 60 FPS UPDATE LOOP
+         **************************************************************************/
+        function update(dt) {
+            if (gameState !== 'PLAYING' || paused) return;
+
+            // 1. Decay phosphor illumination over 4 seconds
+            const decayAmount = dt / FADE_DURATION;
+            for (const seg of wallSegments) {
+                if (seg.alpha > 0) seg.alpha = Math.max(0, seg.alpha - decayAmount);
+            }
+            for (const dec of FLOOR_DECALS) {
+                if (dec.alpha > 0) dec.alpha = Math.max(0, dec.alpha - decayAmount);
+            }
+            for (const k of keycards) {
+                k.phase += dt * 3;
+                if (k.alpha > 0) k.alpha = Math.max(0, k.alpha - decayAmount);
+            }
+            for (const l of lockers) {
+                if (!l.occupied && l.alpha > 0) l.alpha = Math.max(0, l.alpha - decayAmount);
+            }
+            for (const rp of radioPickups) {
+                if (rp.alpha > 0) rp.alpha = Math.max(0, rp.alpha - decayAmount);
+            }
+            for (const _c of creatures) if (_c.alpha > 0) _c.alpha = Math.max(0, _c.alpha - decayAmount * 1.15);
+            if (!exitDoor.unlocked && exitDoor.alpha > 0.15) {
+                exitDoor.alpha = Math.max(0.15, exitDoor.alpha - decayAmount);
+            }
+
+            // 2. Player Movement & Footstep Ripples
+            if (!player.hiding) {
+                let mx = 0, my = 0;
+                if (keys['KeyW'] || keys['ArrowUp']) my -= 1;
+                if ((keys['KeyS']) || keys['ArrowDown'] || keys['KeyX']) my += 1;
+                if (keys['KeyA'] || keys['ArrowLeft']) mx -= 1;
+                if (keys['KeyD'] || keys['ArrowRight']) mx += 1;
+
+                player.sprinting = !!(keys['ShiftLeft'] || keys['ShiftRight']) && (mx !== 0 || my !== 0);
+                if (player.sprinting) player.crouching = false;
+
+                if (mx !== 0 || my !== 0) {
+                    const len = Math.hypot(mx, my);
+                    mx /= len;
+                    my /= len;
+
+                    let currentSpeed = player.speedWalk;
+                    if (player.sprinting) currentSpeed = player.speedSprint;
+                    else if (player.crouching) currentSpeed = player.speedCrouch;
+
+                    currentSpeed *= (stimT > 0 ? 1.35 : 1);
+                    player.x += mx * currentSpeed * dt;
+                    player.y += my * currentSpeed * dt;
+                    resolveWallCollisions(player);
+
+                    // Footstep acoustic emission
+                    stats.stepTimer += dt * (player.sprinting ? 2.6 : (player.crouching ? 0.8 : 1.5));
+                    if (stats.stepTimer >= 0.48) {
+                        stats.stepTimer = 0;
+                        if (player.sprinting) {
+                            stats.noiseLevel = Math.max(stats.noiseLevel, 0.78);
+                            audio.playSonarPing(false);
+                            emitSonarPulse(player.x, player.y, 440 * player.noiseMult, 'cyan', true);
+                        } else if (player.crouching) {
+                            stats.noiseLevel = Math.max(stats.noiseLevel, 0.1);
+                            emitSonarPulse(player.x, player.y, 115 * player.noiseMult, 'cyan', false);
+                        } else {
+                            stats.noiseLevel = Math.max(stats.noiseLevel, 0.28);
+                            emitSonarPulse(player.x, player.y, 210 * player.noiseMult, 'cyan', true);
+                        }
+                    }
+                }
+            }
+
+            // Aim angle toward mouse
+            mouseWorld.x = mouseScreen.x + camera.x;
+            mouseWorld.y = mouseScreen.y + camera.y;
+            player.angle = Math.atan2(mouseWorld.y - player.y, mouseWorld.x - player.x);
+
+            // Smooth noise meter decay
+            stats.noiseLevel = Math.max(0.04, stats.noiseLevel - dt * 0.65);
+
+            // 3. Collect Keycards & Radio Pickups
+            if (!player.hiding) {
+                for (const k of keycards) {
+                    if (!k.collected && k.hackOk) {
+                        k.collected = true;
+                        player.keysCollected++;
+                        onKeyCollected(k);
+                        audio.playKeycardPickup();
+                        emitSonarPulse(k.x, k.y, 520, 'cyan', false);
+
+                        if (player.keysCollected >= 3) {
+                            exitDoor.unlocked = true;
+                            exitDoor.alpha = 1.0;
+                            emitSonarPulse(exitDoor.mx, exitDoor.my, 900, 'green', false);
+                        }
+                        updateHUD();
+                    }
+                }
+
+                for (const rp of radioPickups) {
+                    if (!rp.collected && player.decoys < player.maxDecoys && Math.hypot(player.x - rp.x, player.y - rp.y) < 32) {
+                        rp.collected = true;
+                        player.decoys++;
+                        audio.playKeycardPickup();
+                        updateHUD();
+                    }
+                }
+
+                // Check Containment Exit Win Condition
+                if (exitDoor.unlocked && player.y > 1385 && player.x > 980 && player.x < 1220) {
+                    endGame(true);
+                    return;
+                }
+            }
+
+            // 4. Update Thrown Acoustic Decoy Radios
+            for (let i = decoyRadios.length - 1; i >= 0; i--) {
+                const d = decoyRadios[i];
+                // Slide with friction
+                moveDecoy(d, dt);
+
+                d.activeTime -= dt;
+                d.pingTimer -= dt;
+                if (d.pingTimer <= 0 && d.activeTime > 0) {
+                    d.pingTimer = 0.85;
+                    audio.playRadioDecoy();
+                    emitSonarPulse(d.x, d.y, 640, 'green', true);
+                }
+
+                if (d.activeTime <= 0) {
+                    decoyRadios.splice(i, 1);
+                }
+            }
+
+            // 5. Update Expanding Acoustic Sonar Rings & Wavefront Illumination
+            for (let i = sonarPulses.length - 1; i >= 0; i--) {
+                const p = sonarPulses[i];
+                const prevRadius = p.radius;
+                p.radius += p.speed * dt;
+                const bandThickness = 26;
+
+                // Illuminate wall segments intersected by the ring wavefront
+                for (const seg of wallSegments) {
+                    const d = Math.hypot(seg.mx - p.x, seg.my - p.y);
+                    if (Math.abs(d - p.radius) <= bandThickness) {
+                        const strength = Math.max(0.25, 1 - (p.radius / p.maxRadius) * 0.45);
+                        if (strength >= seg.alpha) {
+                            seg.alpha = 1.0;
+                            seg.tint = p.colorType;
+                        }
+                    }
+                }
+
+                // Illuminate floor decals
+                for (const dec of FLOOR_DECALS) {
+                    const d = Math.hypot(dec.x - p.x, dec.y - p.y);
+                    if (Math.abs(d - p.radius) <= bandThickness) {
+                        dec.alpha = 1.0;
+                        dec.tint = p.colorType;
+                    }
+                }
+
+                // Illuminate Keycards
+                for (const k of keycards) {
+                    if (!k.collected && Math.abs(Math.hypot(k.x - p.x, k.y - p.y) - p.radius) <= bandThickness) {
+                        k.alpha = 1.0;
+                    }
+                }
+
+                // Illuminate Lockers
+                for (const l of lockers) {
+                    if (Math.abs(Math.hypot(l.x - p.x, l.y - p.y) - p.radius) <= bandThickness) {
+                        l.alpha = 1.0;
+                    }
+                }
+
+                // Illuminate Radio Pickups
+                for (const rp of radioPickups) {
+                    if (!rp.collected && Math.abs(Math.hypot(rp.x - p.x, rp.y - p.y) - p.radius) <= bandThickness) {
+                        rp.alpha = 1.0;
+                    }
+                }
+
+                // Illuminate Exit Door
+                if (Math.abs(Math.hypot(exitDoor.mx - p.x, exitDoor.my - p.y) - p.radius) <= bandThickness * 1.5) {
+                    exitDoor.alpha = 1.0;
+                }
+
+                // Wavefront hits the Creature!
+                for (const _c of creatures) {
+                const distToCreature = Math.hypot(_c.x - p.x, _c.y - p.y);
+                if (Math.abs(distToCreature - p.radius) <= bandThickness) {
+                    _c.alpha = 1.0;
+
+                    // If this is a player or decoy sound ring and within monster hearing capability, trigger HUNT
+                    if (p.alertsMonster && !(p.al && p.al.has(_c)) && p.maxRadius >= 200) {
+                        (p.al = p.al || new Set()).add(_c);
+                        creature = _c;
+                        alertCreatureToSound(p.x, p.y, p.colorType === 'green');
+                    }
+                }
+                }
+
+                if (p.radius >= p.maxRadius) {
+                    sonarPulses.splice(i, 1);
+                }
+            }
+
+            // 6. Update Hunting Creature AIs
+            for (const _c of creatures) {
+                creature = _c;
+                if (_c.stun > 0) { _c.stun -= dt; continue; }
+                updateCreatureAI(dt);
+            }
+            updateExtras(dt);
+
+            // 7. Dynamic Heartbeat Audio based on Creature Proximity
+            const distPlayerMonster = Math.min(...creatures.map(c => Math.hypot(player.x - c.x, player.y - c.y)));
+            if (distPlayerMonster < 650) {
+                const proximity = 1 - (distPlayerMonster / 650);
+                const beatInterval = Math.max(0.32, 1.05 - proximity * 0.72);
+                const now = performance.now() / 1000;
+                if (now - audio.lastHeartbeat >= beatInterval) {
+                    audio.lastHeartbeat = now;
+                    audio.playHeartbeat(proximity);
+                }
+            }
+
+            // 8. Smooth Camera Follow
+            const targetCamX = player.x - canvas.width / 2;
+            const targetCamY = player.y - canvas.height / 2;
+            camera.x += (targetCamX - camera.x) * Math.min(1, dt * 8);
+            camera.y += (targetCamY - camera.y) * Math.min(1, dt * 8);
+
+            // 9. Update Context Prompt (Locker / Exit proximity)
+            updateContextPrompt();
+        }
+
+        function alertCreatureToSound(soundX, soundY, isDecoy = false) {
+            creature.targetX = soundX;
+            creature.targetY = soundY;
+            creature.state = 'HUNTING';
+            creature.alertTimer = isDecoy ? 7.5 : 9.0;
+
+            if (creature.roarCooldown <= 0) {
+                creature.roarCooldown = 2.4;
+                audio.playMonsterRoar();
+                // Monster emits a terrifying crimson counter-pulse!
+                emitSonarPulse(creature.x, creature.y, 750, 'red', false);
+            }
+            updateHUD();
+        }
+
+        function updateCreatureAI(dt) {
+            creature.tendrilPhase += dt * 7.5;
+            if (creature.roarCooldown > 0) creature.roarCooldown -= dt;
+
+            // Prioritize active Decoy Radios within range
+            if (decoyRadios.length > 0) {
+                const latestDecoy = decoyRadios[decoyRadios.length - 1];
+                const dDecoy = Math.hypot(creature.x - latestDecoy.x, creature.y - latestDecoy.y);
+                if (dDecoy < 900) {
+                    creature.targetX = latestDecoy.x;
+                    creature.targetY = latestDecoy.y;
+                    creature.state = 'HUNTING';
+                    creature.alertTimer = 5.0;
+                }
+            }
+
+            // Direct proximity detection if player is NOT hiding inside a stasis locker
+            const distToPlayer = Math.hypot(player.x - creature.x, player.y - creature.y);
+            const detectRange = player.crouching ? 65 : 115;
+            if (!player.hiding && distToPlayer < detectRange) {
+                creature.targetX = player.x;
+                creature.targetY = player.y;
+                creature.state = 'HUNTING';
+                creature.alertTimer = 6.0;
+            }
+
+            // Catch check
+            if (!player.hiding && distToPlayer < player.radius + creature.radius - 2) {
+                audio.playMonsterRoar();
+                endGame(false);
+                return;
+            }
+
+            // State timer management
+            if (creature.state === 'HUNTING' || creature.state === 'SEARCHING') {
+                creature.alertTimer -= dt;
+                if (creature.alertTimer <= 0) {
+                    if (creature.state === 'HUNTING') {
+                        creature.state = 'SEARCHING';
+                        creature.alertTimer = 5.0;
+                        // Wander around the last known sound coordinates
+                        creature.targetX += (Math.random() - 0.5) * 260;
+                        creature.targetY += (Math.random() - 0.5) * 260;
+                    } else {
+                        creature.state = 'DORMANT';
+                        const wp = PATROL_WAYPOINTS[creature.waypointIdx];
+                        creature.targetX = wp.x;
+                        creature.targetY = wp.y;
+                    }
+                    updateHUD();
+                }
+            }
+
+            // Move toward target
+            const dx = creature.targetX - creature.x;
+            const dy = creature.targetY - creature.y;
+            const distToTarget = Math.hypot(dx, dy);
+
+            let speed = creature.speedPatrol;
+            if (creature.state === 'HUNTING') speed = creature.speedHunt;
+            else if (creature.state === 'SEARCHING') speed = creature.speedInvestigate;
+
+            if (distToTarget > 12) {
+                const _st = steer(creature);
+                creature.angle = Math.atan2(_st.y - creature.y, _st.x - creature.x);
+                const prevX = creature.x;
+                const prevY = creature.y;
+
+                creature.x += Math.cos(creature.angle) * speed * dt;
+                creature.y += Math.sin(creature.angle) * speed * dt;
+                resolveWallCollisions(creature, 10);
+
+                // If blocked by a wall segment, steer perpendicular to slide around doorways
+
+            } else {
+                // Reached target coordinate
+                if (creature.state === 'DORMANT') {
+                    creature.waypointIdx = (creature.waypointIdx + 1) % PATROL_WAYPOINTS.length;
+                    const wp = PATROL_WAYPOINTS[creature.waypointIdx];
+                    creature.targetX = wp.x;
+                    creature.targetY = wp.y;
+                } else if (creature.state === 'HUNTING') {
+                    creature.state = 'SEARCHING';
+                    creature.alertTimer = 4.5;
+                    creature.targetX = Math.max(140, Math.min(WORLD_W - 140, creature.x + (Math.random() - 0.5) * 320));
+                    creature.targetY = Math.max(140, Math.min(WORLD_H - 140, creature.y + (Math.random() - 0.5) * 320));
+                    updateHUD();
+                }
+            }
+
+            // Creature emits periodic crimson footstep ripples (visible in the dark!)
+            creature.stepTimer += dt * (creature.state === 'HUNTING' ? 2.2 : 1.0);
+            if (creature.stepTimer >= 0.9) {
+                creature.stepTimer = 0;
+                const rippleSize = creature.state === 'HUNTING' ? 380 : 230;
+                emitSonarPulse(creature.x, creature.y, rippleSize, 'red', false);
+            }
+        }
+
+        function updateContextPrompt() {
+            const promptEl = document.getElementById('contextPrompt');
+            const promptText = document.getElementById('contextPromptText');
+
+            if (player.hiding) {
+                promptEl.classList.remove('hidden');
+                promptText.textContent = 'STASIS POD SEALED — PRESS [F] TO EXIT';
+                return;
+            }
+
+            let nearLocker = false;
+            for (const loc of lockers) {
+                if (Math.hypot(player.x - loc.x, player.y - loc.y) < 68) {
+                    nearLocker = true;
+                    loc.alpha = Math.max(loc.alpha, 0.65);
+                    break;
+                }
+            }
+
+            if (nearLocker) {
+                promptEl.classList.remove('hidden');
+                promptText.textContent = 'PRESS [F] TO HIDE IN STASIS POD';
+            } else {
+                promptEl.classList.add('hidden');
+            }
+        }
+
+        /**************************************************************************
+         * 7. STUDIO-QUALITY ACOUSTIC WIREFRAME RENDERER
+         **************************************************************************/
+        function render() {
+            // Pitch black background
+            ctx.fillStyle = '#020305';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            ctx.save();
+            ctx.translate(-camera.x + (Math.random() - 0.5) * shake * 14, -camera.y + (Math.random() - 0.5) * shake * 14);
+
+            // 1. Subtle Grid inside Player's Faint Personal Aura (75px radius)
+            const auraGrad = ctx.createRadialGradient(player.x, player.y, 6, player.x, player.y, 92);
+            auraGrad.addColorStop(0, 'rgba(0, 243, 255, 0.13)');
+            auraGrad.addColorStop(0.6, 'rgba(0, 243, 255, 0.04)');
+            auraGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+            ctx.fillStyle = auraGrad;
+            ctx.beginPath();
+            ctx.arc(player.x, player.y, 92, 0, Math.PI * 2);
+            ctx.fill();
+
+            // 2. Render Illuminated Floor Decals & Spore Trails
+            for (const dec of FLOOR_DECALS) {
+                const auraDist = Math.hypot(dec.x - player.x, dec.y - player.y);
+                const visAlpha = Math.max(dec.alpha, auraDist < 90 ? (1 - auraDist / 90) * 0.45 : 0);
+                if (visAlpha <= 0.01) continue;
+
+                ctx.save();
+                if (dec.kind === 'text' || dec.kind === 'hazard') {
+                    ctx.font = 'bold 13px "Share Tech Mono", monospace';
+                    ctx.fillStyle = dec.kind === 'hazard'
+                        ? `rgba(255, 183, 0, ${visAlpha * 0.85})`
+                        : `rgba(0, 243, 255, ${visAlpha * 0.55})`;
+                    ctx.textAlign = 'center';
+                    ctx.fillText(dec.label, dec.x, dec.y);
+                } else if (dec.kind === 'spore') {
+                    ctx.strokeStyle = `rgba(255, 30, 66, ${visAlpha * 0.5})`;
+                    ctx.fillStyle = `rgba(255, 30, 66, ${visAlpha * 0.12})`;
+                    ctx.beginPath();
+                    ctx.arc(dec.x, dec.y, dec.r, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.stroke();
+                }
+                ctx.restore();
+            }
+
+            // 3. Render Illuminated Laboratory Wall Segments (4s Decay)
+            ctx.lineCap = 'round';
+            for (const seg of wallSegments) {
+                const auraDist = Math.hypot(seg.mx - player.x, seg.my - player.y);
+                const auraAlpha = auraDist < 88 ? (1 - auraDist / 88) * 0.55 : 0;
+                const a = Math.max(seg.alpha, auraAlpha);
+                if (a <= 0.01) continue;
+
+                let strokeColor = `rgba(0, 243, 255, ${a})`;
+                let glowColor = 'rgba(0, 243, 255, 0.7)';
+                if (seg.tint === 'green') {
+                    strokeColor = `rgba(0, 255, 136, ${a})`;
+                    glowColor = 'rgba(0, 255, 136, 0.7)';
+                } else if (seg.tint === 'red') {
+                    strokeColor = `rgba(255, 30, 66, ${a})`;
+                    glowColor = 'rgba(255, 30, 66, 0.7)';
+                }
+
+                ctx.save();
+                if (a > 0.45) {
+                    ctx.shadowColor = glowColor;
+                    ctx.shadowBlur = 10 * a;
+                }
+                ctx.strokeStyle = strokeColor;
+                ctx.lineWidth = 4;
+                ctx.beginPath();
+                ctx.moveTo(seg.x1, seg.y1);
+                ctx.lineTo(seg.x2, seg.y2);
+                ctx.stroke();
+                ctx.restore();
+            }
+
+            // 4. Render Southern Containment Airlock Exit
+            const exitAlpha = Math.max(exitDoor.alpha, exitDoor.unlocked ? 0.9 : 0.22);
+            ctx.save();
+            const exitColor = exitDoor.unlocked ? `rgba(0, 255, 136, ${exitAlpha})` : `rgba(255, 183, 0, ${exitAlpha})`;
+            ctx.strokeStyle = exitColor;
+            ctx.shadowColor = exitColor;
+            ctx.shadowBlur = 14;
+            ctx.lineWidth = 6;
+            ctx.setLineDash(exitDoor.unlocked ? [10, 8] : []);
+            ctx.beginPath();
+            ctx.moveTo(exitDoor.x1, exitDoor.y1);
+            ctx.lineTo(exitDoor.x2, exitDoor.y2);
+            ctx.stroke();
+            ctx.font = 'bold 12px "Orbitron", sans-serif';
+            ctx.fillStyle = exitColor;
+            ctx.textAlign = 'center';
+            ctx.fillText(
+                exitDoor.unlocked ? 'CONTAINMENT AIRLOCK OPEN — ESCAPE HERE' : `CONTAINMENT AIRLOCK LOCKED [${player.keysCollected}/3 KEYS]`,
+                exitDoor.mx,
+                exitDoor.my - 14
+            );
+            ctx.restore();
+
+            // 5. Render Stasis Hiding Lockers
+            for (const loc of lockers) {
+                const auraDist = Math.hypot(loc.x - player.x, loc.y - player.y);
+                const a = Math.max(loc.alpha, auraDist < 95 ? (1 - auraDist / 95) * 0.8 : 0.08);
+                if (a <= 0.02) continue;
+
+                ctx.save();
+                ctx.translate(loc.x, loc.y);
+                ctx.strokeStyle = loc.occupied ? `rgba(255, 183, 0, ${a})` : `rgba(56, 189, 248, ${a})`;
+                ctx.fillStyle = loc.occupied ? `rgba(255, 183, 0, ${a * 0.22})` : `rgba(14, 116, 144, ${a * 0.18})`;
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.roundRect(-loc.w / 2, -loc.h / 2, loc.w, loc.h, 5);
+                ctx.fill();
+                ctx.stroke();
+
+                // Stasis Pod Slats
+                ctx.beginPath();
+                ctx.moveTo(-10, -8); ctx.lineTo(10, -8);
+                ctx.moveTo(-10, 0);  ctx.lineTo(10, 0);
+                ctx.moveTo(-10, 8);  ctx.lineTo(10, 8);
+                ctx.stroke();
+
+                if (a > 0.35) {
+                    ctx.font = '10px "Share Tech Mono", monospace';
+                    ctx.fillStyle = `rgba(186, 230, 253, ${a})`;
+                    ctx.textAlign = 'center';
+                    ctx.fillText(loc.temp ? 'VENT [F]' : 'POD [F]', 0, -24);
+                }
+                ctx.restore();
+            }
+
+            // 6. Render Extra Decoy Radio Pickups
+            for (const rp of radioPickups) {
+                if (rp.collected) continue;
+                const auraDist = Math.hypot(rp.x - player.x, rp.y - player.y);
+                const a = Math.max(rp.alpha, auraDist < 90 ? 0.85 : 0.12);
+                if (a <= 0.02) continue;
+
+                ctx.save();
+                ctx.translate(rp.x, rp.y);
+                ctx.strokeStyle = `rgba(0, 255, 136, ${a})`;
+                ctx.lineWidth = 2;
+                ctx.strokeRect(-9, -7, 18, 14);
+                ctx.beginPath();
+                ctx.moveTo(4, -7);
+                ctx.lineTo(9, -16);
+                ctx.stroke();
+                if (a > 0.3) {
+                    ctx.font = '10px "Share Tech Mono", monospace';
+                    ctx.fillStyle = `rgba(0, 255, 136, ${a})`;
+                    ctx.textAlign = 'center';
+                    ctx.fillText('+DECOY', 0, 19);
+                }
+                ctx.restore();
+            }
+
+            // 7. Render 3 Security Keycards (Alpha, Beta, Gamma)
+            for (const k of keycards) {
+                if (k.collected) continue;
+                const auraDist = Math.hypot(k.x - player.x, k.y - player.y);
+                // Faintly pulse keycards when pinged
+                const a = Math.max(k.alpha, auraDist < 110 ? 0.95 : 0.16);
+
+                ctx.save();
+                ctx.translate(k.x, k.y);
+                const pulseScale = 1 + Math.sin(k.phase) * 0.12;
+                ctx.scale(pulseScale, pulseScale);
+
+                ctx.shadowColor = 'rgba(0, 243, 255, 0.9)';
+                ctx.shadowBlur = 12 * a;
+                ctx.strokeStyle = `rgba(0, 243, 255, ${a})`;
+                ctx.fillStyle = `rgba(0, 243, 255, ${a * 0.25})`;
+                ctx.lineWidth = 2;
+
+                // Diamond Keycard Wireframe
+                ctx.beginPath();
+                ctx.moveTo(0, -14);
+                ctx.lineTo(14, 0);
+                ctx.lineTo(0, 14);
+                ctx.lineTo(-14, 0);
+                ctx.closePath();
+                ctx.fill();
+                ctx.stroke();
+
+                ctx.font = 'bold 11px "Share Tech Mono", monospace';
+                ctx.fillStyle = `rgba(255, 255, 255, ${a})`;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(k.symbol, 0, 0);
+
+                if (a > 0.35) {
+                    ctx.font = '10px "Share Tech Mono", monospace';
+                    ctx.fillStyle = `rgba(0, 243, 255, ${a})`;
+                    ctx.fillText(k.name, 0, -22);
+                }
+                ctx.restore();
+            }
+
+            // 8. Render Active Thrown Decoy Radios
+            for (const d of decoyRadios) {
+                ctx.save();
+                ctx.translate(d.x, d.y);
+                ctx.strokeStyle = '#00ff88';
+                ctx.fillStyle = 'rgba(0, 255, 136, 0.25)';
+                ctx.shadowColor = '#00ff88';
+                ctx.shadowBlur = 12;
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.arc(0, 0, 9, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+
+                ctx.font = '10px "Share Tech Mono", monospace';
+                ctx.fillStyle = '#00ff88';
+                ctx.textAlign = 'center';
+                ctx.fillText(`LURE ${d.activeTime.toFixed(1)}s`, 0, -14);
+                ctx.restore();
+            }
+
+            renderExtras();
+            // 9. Render Expanding 360° Acoustic Sonar Rings
+            for (const p of sonarPulses) {
+                const lifeRatio = 1 - p.radius / p.maxRadius;
+                const ringAlpha = Math.max(0, lifeRatio * 0.85);
+
+                let rgb = '0, 243, 255';
+                if (p.colorType === 'green') rgb = '0, 255, 136';
+                else if (p.colorType === 'red') rgb = '255, 30, 66';
+
+                ctx.save();
+                ctx.strokeStyle = `rgba(${rgb}, ${ringAlpha})`;
+                ctx.lineWidth = p.colorType === 'red' ? 3 : 2.2;
+                ctx.shadowColor = `rgba(${rgb}, ${ringAlpha})`;
+                ctx.shadowBlur = 12;
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+                ctx.stroke();
+
+                // Secondary subtle harmonic echo ring
+                if (p.radius > 24) {
+                    ctx.strokeStyle = `rgba(${rgb}, ${ringAlpha * 0.3})`;
+                    ctx.lineWidth = 1;
+                    ctx.beginPath();
+                    ctx.arc(p.x, p.y, p.radius - 18, 0, Math.PI * 2);
+                    ctx.stroke();
+                }
+                ctx.restore();
+            }
+
+            // 10. Render Hunting Biological Creature (Revealed by Sonar or Close Aura)
+            for (const _c of creatures) { creature = _c;
+            const distPlayerMonster = Math.hypot(creature.x - player.x, creature.y - player.y);
+            const monsterAlpha = Math.max(creature.alpha, distPlayerMonster < 105 ? (1 - distPlayerMonster / 105) : 0);
+
+            if (monsterAlpha > 0.02) {
+                ctx.save();
+                ctx.translate(creature.x, creature.y);
+                ctx.rotate(creature.angle);
+
+                ctx.strokeStyle = `rgba(255, 30, 66, ${monsterAlpha})`;
+                ctx.fillStyle = `rgba(255, 30, 66, ${monsterAlpha * 0.28})`;
+                ctx.shadowColor = 'rgba(255, 30, 66, 0.9)';
+                ctx.shadowBlur = 16 * monsterAlpha;
+                ctx.lineWidth = 2.2;
+
+                // Writhing bio-acoustic tendrils
+                for (let t = 0; t < 8; t++) {
+                    const baseAngle = (t / 8) * Math.PI * 2;
+                    const wave = Math.sin(creature.tendrilPhase + t * 1.3) * 0.35;
+                    const tx = Math.cos(baseAngle + wave) * (creature.radius + 12);
+                    const ty = Math.sin(baseAngle + wave) * (creature.radius + 12);
+                    ctx.beginPath();
+                    ctx.moveTo(0, 0);
+                    ctx.quadraticCurveTo(tx * 0.5, ty * 0.5 + 5, tx, ty);
+                    ctx.stroke();
+                }
+
+                // Core Carapace
+                ctx.beginPath();
+                ctx.arc(0, 0, creature.radius, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+
+                // Sensory Maw
+                ctx.beginPath();
+                ctx.moveTo(creature.radius + 8, 0);
+                ctx.lineTo(creature.radius - 6, -8);
+                ctx.lineTo(creature.radius - 6, 8);
+                ctx.closePath();
+                ctx.stroke();
+
+                ctx.restore();
+            }
+            }
+
+            // 11. Render Player Acoustic Rig
+            if (!player.hiding) {
+                ctx.save();
+                ctx.translate(player.x, player.y);
+                ctx.rotate(player.angle);
+
+                ctx.strokeStyle = '#00f3ff';
+                ctx.fillStyle = 'rgba(0, 243, 255, 0.22)';
+                ctx.shadowColor = '#00f3ff';
+                ctx.shadowBlur = 10;
+                ctx.lineWidth = 2;
+
+                // Player Suit Circle
+                ctx.beginPath();
+                ctx.arc(0, 0, player.radius, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+
+                // Directional Visor Cone
+                ctx.beginPath();
+                ctx.moveTo(player.radius + 6, 0);
+                ctx.lineTo(player.radius - 5, -6);
+                ctx.lineTo(player.radius - 5, 6);
+                ctx.closePath();
+                ctx.fillStyle = '#00f3ff';
+                ctx.fill();
+
+                ctx.restore();
+            }
+
+            ctx.restore();
+
+            // 12. Off-Screen Acoustic Direction Indicators (for Decoys & Unlocked Exit)
+            renderTacticalCompass();
+            renderWaveformHUD();
+        }
+
+        function renderTacticalCompass() {
+            const cx = canvas.width / 2;
+            const cy = canvas.height / 2;
+
+            // If all 3 keycards are collected, show a subtle perimeter beacon toward the unlocked Exit Airlock
+            if (exitDoor.unlocked) {
+                const angle = Math.atan2(exitDoor.my - player.y, exitDoor.mx - player.x);
+                const r = Math.min(cx, cy) - 65;
+                const bx = cx + Math.cos(angle) * r;
+                const by = cy + Math.sin(angle) * r;
+
+                ctx.save();
+                ctx.translate(bx, by);
+                ctx.fillStyle = 'rgba(0, 255, 136, 0.85)';
+                ctx.font = 'bold 11px "Share Tech Mono", monospace';
+                ctx.textAlign = 'center';
+                ctx.fillText('▼ EXIT AIRLOCK ▼', 0, 0);
+                ctx.restore();
+            }
+        }
+
+        // Diegetic Oscilloscope Waveform in Top HUD
+        let wavePhase = 0;
+        function renderWaveformHUD() {
+            wavePhase += 0.22;
+            waveCtx.clearRect(0, 0, waveCanvas.width, waveCanvas.height);
+
+            const amp = Math.min(14, 1.5 + stats.noiseLevel * 13);
+            waveCtx.strokeStyle = stats.noiseLevel > 0.65 ? '#ff1e42' : '#00f3ff';
+            waveCtx.lineWidth = 1.6;
+            waveCtx.beginPath();
+
+            for (let x = 0; x < waveCanvas.width; x++) {
+                const norm = x / waveCanvas.width;
+                const env = Math.sin(norm * Math.PI);
+                const y = waveCanvas.height / 2 + Math.sin(x * 0.35 + wavePhase) * amp * env;
+                if (x === 0) waveCtx.moveTo(x, y);
+                else waveCtx.lineTo(x, y);
+            }
+            waveCtx.stroke();
+        }
+
+        /**************************************************************************
+         * 8. HUD UPDATES & MODAL MANAGEMENT
+         **************************************************************************/
+        function updateHUD() {
+            // Keycard badges
+            document.getElementById('keyCountText').textContent = `${player.keysCollected}/3`;
+            keycards.forEach(k => {
+                const el = document.getElementById(`key-${k.id}`);
+                if (!el) return;
+                if (k.collected) {
+                    el.className = 'px-2 py-0.5 text-xs rounded border border-cyan-300 text-black bg-cyan-400 font-bold shadow-[0_0_10px_#00f3ff] flex items-center gap-1';
+                } else {
+                    el.className = 'px-2 py-0.5 text-xs rounded border border-cyan-500/30 text-cyan-600 bg-black/50 flex items-center gap-1';
+                }
+            });
+
+            // Decoy Radio Icons
+            const decoyContainer = document.getElementById('decoyIcons');
+            decoyContainer.innerHTML = '';
+            for (let i = 0; i < player.maxDecoys; i++) {
+                const active = i < player.decoys;
+                const pill = document.createElement('div');
+                pill.className = active
+                    ? 'w-5 h-3 rounded-sm bg-emerald-400 border border-emerald-200 shadow-[0_0_8px_#00ff88]'
+                    : 'w-5 h-3 rounded-sm bg-emerald-950/40 border border-emerald-500/30';
+                decoyContainer.appendChild(pill);
+            }
+
+            // Creature Alert State Badge
+            const badge = document.getElementById('creatureStateBadge');
+            const _ts = topState();
+            if (_ts === 'DORMANT') {
+                badge.textContent = 'DORMANT';
+                badge.className = 'font-display text-xs sm:text-sm font-bold tracking-wider text-emerald-400';
+            } else if (_ts === 'SEARCHING') {
+                badge.textContent = 'SEARCHING';
+                badge.className = 'font-display text-xs sm:text-sm font-bold tracking-wider text-amber-400';
+            } else {
+                badge.textContent = 'HUNTING!';
+                badge.className = 'font-display text-xs sm:text-sm font-bold tracking-wider text-rose-500 danger-blink';
+            }
+
+            // Stance & Hiding Badge
+            const stanceEl = document.getElementById('stanceBadge');
+            if (player.hiding) {
+                stanceEl.textContent = 'STASIS POD';
+                stanceEl.className = 'text-xs font-bold text-amber-300';
+            } else if (player.sprinting) {
+                stanceEl.textContent = 'SPRINTING';
+                stanceEl.className = 'text-xs font-bold text-rose-400';
+            } else if (player.crouching) {
+                stanceEl.textContent = 'CROUCHED';
+                stanceEl.className = 'text-xs font-bold text-emerald-300';
+            } else {
+                stanceEl.textContent = 'WALKING';
+                stanceEl.className = 'text-xs font-bold text-cyan-300';
+            }
+
+            const hideBadge = document.getElementById('hideStatusBadge');
+            if (player.hiding) {
+                hideBadge.textContent = 'HIDDEN [POD]';
+                hideBadge.className = 'px-2.5 py-1 rounded text-xs border border-amber-400 bg-amber-950/60 text-amber-200 font-bold';
+            } else {
+                hideBadge.textContent = 'EXPOSED';
+                hideBadge.className = 'px-2.5 py-1 rounded text-xs border border-cyan-500/30 bg-cyan-950/30 text-cyan-300';
+            }
+        }
+
+        function endGame(victory) {
+            gameState = victory ? 'WIN' : 'GAMEOVER';
+            const modal = document.getElementById('modalOverlay');
+            const title = document.getElementById('modalTitle');
+            const sub = document.getElementById('modalSubtitle');
+            const statsBox = document.getElementById('modalStats');
+            const startBtn = document.getElementById('startBtn');
+
+            modal.classList.remove('hidden');
+            statsBox.classList.remove('hidden');
+
+            const elapsed = Math.round((performance.now() - stats.startTime) / 1000);
+            document.getElementById('statTime').textContent = `${elapsed}s`;
+            document.getElementById('statPings').textContent = stats.pingsUsed;
+            document.getElementById('statKeys').textContent = `${player.keysCollected}/3`;
+
+            if (victory) {
+                title.textContent = 'CONTAINMENT ESCAPED';
+                title.className = 'font-display text-2xl sm:text-4xl font-black tracking-wider text-emerald-400 mb-3';
+                sub.innerHTML = 'Airlock decontamination sequence complete. You navigated the pitch-black acoustic chamber and outsmarted Subject-89.';
+                startBtn.textContent = 'PLAY AGAIN [ENTER / CLICK]';
+            } else {
+                title.textContent = 'SIGNAL TERMINATED';
+                title.className = 'font-display text-2xl sm:text-4xl font-black tracking-wider text-rose-500 mb-3';
+                sub.innerHTML = 'Subject-89 triangulated your acoustic signature in the dark. Use <strong>Crouch [C]</strong>, <strong>Decoy Radios [E]</strong>, and <strong>Stasis Pods [F]</strong> to survive.';
+                startBtn.textContent = 'REINITIALIZE SUIT [R / ENTER]';
+            }
+        }
+
+        function startGameFromModal() {
+            audio.init();
+            document.getElementById('modalOverlay').classList.add('hidden');
+            initGame();
+            gameState = 'PLAYING';
+        }
+
+        /**************************************************************************
+         * 9. INPUT LISTENERS & RESIZE HANDLER
+         **************************************************************************/
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        window.addEventListener('keydown', (e) => {
+            keys[e.code] = true;
+
+            if (e.code === 'Enter' && gameState !== 'PLAYING') {
+                startGameFromModal();
+                return;
+            }
+
+            if (e.code === 'KeyR') {
+                askRestart();
+                return;
+            }
+
+            if (gameState !== 'PLAYING') return;
+
+            if (e.code === 'Space') {
+                e.preventDefault();
+                triggerPlayerSonar();
+            } else if (e.code === 'KeyE') {
+                throwDecoyRadio();
+            } else if (e.code === 'KeyF') {
+                toggleHideInLocker();
+            } else if (e.code === 'KeyC') {
+                player.crouching = !player.crouching;
+                updateHUD();
+            }
+        });
+
+        window.addEventListener('keyup', (e) => {
+            keys[e.code] = false;
+            if (player) updateHUD();
+        });
+
+        canvas.addEventListener('mousemove', (e) => {
+            mouseScreen.x = e.clientX;
+            mouseScreen.y = e.clientY;
+        });
+
+        canvas.addEventListener('mousedown', (e) => {
+            if (gameState !== 'PLAYING') return;
+            audio.init();
+            mouseScreen.x = e.clientX;
+            mouseScreen.y = e.clientY;
+            mouseWorld.x = mouseScreen.x + camera.x;
+            mouseWorld.y = mouseScreen.y + camera.y;
+
+            if (e.button === 0) {
+                triggerPlayerSonar();
+            } else if (e.button === 2) {
+                throwDecoyRadio();
+            }
+        });
+
+        // UI Button Listeners
+        document.getElementById('startBtn').addEventListener('click', () => startGameFromModal());
+        document.getElementById('restartBtn').addEventListener('click', () => askRestart());
+        document.getElementById('muteBtn').addEventListener('click', () => {
+            audio.init();
+            const isMuted = audio.toggleMute();
+            document.getElementById('muteBtn').textContent = isMuted ? 'SFX: OFF' : 'SFX: ON';
+        });
+
+        document.getElementById('btnPulse').addEventListener('click', () => { audio.init(); triggerPlayerSonar(); });
+        document.getElementById('btnDecoy').addEventListener('click', () => { audio.init(); throwDecoyRadio(); });
+        document.getElementById('btnHide').addEventListener('click', () => { audio.init(); toggleHideInLocker(); });
+        document.getElementById('btnCrouch').addEventListener('click', () => {
+            if (!player) return;
+            player.crouching = !player.crouching;
+            updateHUD();
+        });
+
+        /**************************************************************************
+         * 11. V2 EXTENSIONS: multi-enemy nav AI, hazards, hacking, store, story
+         **************************************************************************/
+        const $ = id => document.getElementById(id);
+        const STORE_KEY = 'KeyB'; // change to 'KeyB' to restore S as move-down
+        let paused = false, deaths = 0, enemyCount = 3, creatures = [], doors = [], spikes = [], mines = [], gems = [];
+        let gemCount = 0, shake = 0, deathCause = '', stimT = 0, hack = null, hacksDone = 0, ventSpawned = false;
+        let logsShown = {}, lastProg = 0, lastRoom = -1, tipIdx = 0, tipTimer = null, logTimer = null, logHide = null, hackTimers = [];
+        const up = { sonar: 0, decoy: 0, damp: 0 };
+        
+        SoundEngine.prototype.tone = function (f, t = 0.12, type = 'square', v = 0.07) {
+            if (!this.ctx || this.muted) return;
+            const n = this.ctx.currentTime, o = this.ctx.createOscillator(), g = this.ctx.createGain();
+            o.type = type; o.frequency.value = f;
+            g.gain.setValueAtTime(v, n); g.gain.exponentialRampToValueAtTime(0.001, n + t);
+            o.connect(g); g.connect(this.ctx.destination); o.start(n); o.stop(n + t + 0.01);
+        };
+        SoundEngine.prototype.playBoom = function () {
+            if (!this.ctx || this.muted) return;
+            const c = this.ctx, n = c.currentTime, len = c.sampleRate * 0.7, b = c.createBuffer(1, len, c.sampleRate), d = b.getChannelData(0);
+            for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 2);
+            const s = c.createBufferSource(); s.buffer = b;
+            const f = c.createBiquadFilter(); f.type = 'lowpass';
+            f.frequency.setValueAtTime(900, n); f.frequency.exponentialRampToValueAtTime(60, n + 0.7);
+            const g = c.createGain(); g.gain.value = 0.5;
+            s.connect(f); f.connect(g); g.connect(c.destination); s.start(n);
+        };
+        
+        /* ---------- Navigation grid + flow-field steering (smart pathfinding) ---------- */
+        const NAV = 40, NC = Math.ceil(WORLD_W / NAV), NR = Math.ceil(WORLD_H / NAV);
+        let navBlocked = null;
+        function buildNav() {
+            navBlocked = new Uint8Array(NC * NR);
+            for (let r = 0; r < NR; r++) for (let c = 0; c < NC; c++) {
+                const x = (c + 0.5) * NAV, y = (r + 0.5) * NAV;
+                let b = x < 100 || x > 2100 || (y < 100) || (y > 1400 && !(x > 960 && x < 1240));
+                if (y > 1440) b = true;
+                for (let i = 0; i < wallBoxes.length && !b; i++) {
+                    const w = wallBoxes[i];
+                    if (distToSegment(x, y, w.x1, w.y1, w.x2, w.y2).dist < 28) b = true;
+                }
+                navBlocked[r * NC + c] = b ? 1 : 0;
+            }
+        }
+        function navCell(x, y) {
+            return Math.max(0, Math.min(NR - 1, Math.floor(y / NAV))) * NC + Math.max(0, Math.min(NC - 1, Math.floor(x / NAV)));
+        }
+        function flowTo(tx, ty) {
+            const dist = new Int16Array(NC * NR).fill(-1);
+            let s = navCell(tx, ty);
+            if (navBlocked[s]) {
+                let found = -1; const sc = s % NC, sr = (s / NC) | 0;
+                for (let R = 1; R <= 5 && found < 0; R++)
+                    for (let dy = -R; dy <= R && found < 0; dy++)
+                        for (let dx = -R; dx <= R; dx++) {
+                            const c = sc + dx, r = sr + dy;
+                            if (c < 0 || r < 0 || c >= NC || r >= NR) continue;
+                            if (!navBlocked[r * NC + c]) { found = r * NC + c; break; }
+                        }
+                if (found < 0) return dist;
+                s = found;
+            }
+            const q = [s]; dist[s] = 0;
+            for (let h = 0; h < q.length; h++) {
+                const i = q[h], c = i % NC, r = (i / NC) | 0;
+                for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+                    if (!dx && !dy) continue;
+                    const nc = c + dx, nr = r + dy;
+                    if (nc < 0 || nr < 0 || nc >= NC || nr >= NR) continue;
+                    const j = nr * NC + nc;
+                    if (dist[j] >= 0 || navBlocked[j]) continue;
+                    if (dx && dy && (navBlocked[r * NC + nc] || navBlocked[nr * NC + c])) continue;
+                    dist[j] = dist[i] + 1; q.push(j);
+                }
+            }
+            return dist;
+        }
+        function steer(c) {
+            if (!navBlocked) return { x: c.targetX, y: c.targetY };
+            const key = navCell(c.targetX, c.targetY);
+            if (key !== c.flowKey || !c.flow) { c.flow = flowTo(c.targetX, c.targetY); c.flowKey = key; }
+            const f = c.flow, cc = Math.floor(c.x / NAV), cr = Math.floor(c.y / NAV), d0 = f[cr * NC + cc];
+            if (d0 >= 0 && d0 <= 1) return { x: c.targetX, y: c.targetY };
+            let best = -1, bd = d0 >= 0 ? d0 : 1e9;
+            for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+                if (!dx && !dy) continue;
+                const nc = cc + dx, nr = cr + dy;
+                if (nc < 0 || nr < 0 || nc >= NC || nr >= NR) continue;
+                const j = nr * NC + nc;
+                if (f[j] < 0) continue;
+                if (dx && dy && (navBlocked[cr * NC + nc] || navBlocked[nr * NC + cc])) continue;
+                if (f[j] < bd) { bd = f[j]; best = j; }
+            }
+            if (best < 0) return { x: c.targetX, y: c.targetY };
+            return { x: ((best % NC) + 0.5) * NAV, y: (((best / NC) | 0) + 0.5) * NAV };
+        }
+        function topState() {
+            return creatures.some(c => c.state === 'HUNTING') ? 'HUNTING' : creatures.some(c => c.state === 'SEARCHING') ? 'SEARCHING' : 'DORMANT';
+        }
+        function alertAll(x, y, decoy = false) {
+            for (const c of creatures) if (Math.hypot(c.x - x, c.y - y) < 900) { creature = c; alertCreatureToSound(x, y, decoy); }
+        }
+        
+        /* ---------- Session setup (runs after every initGame) ---------- */
+        const _initGame = initGame;
+        initGame = function () {
+            _initGame();
+            if (!navBlocked) buildNav();
+            const base = creature; base.name = 'SUBJECT-89';
+            const mk = o => Object.assign({}, base, o, { alpha: 0, state: 'DORMANT', alertTimer: 0, stun: 0, flow: null, flowKey: -1 });
+            creatures = [base,
+                mk({ name: 'CHORUS-2', x: 1100, y: 1220, radius: 17, speedPatrol: 112, speedHunt: 214, hearingRadius: 640, waypointIdx: 6, targetX: 600, targetY: 1220 }),
+                mk({ name: 'CHORUS-3', x: 580, y: 780, radius: 17, speedPatrol: 112, speedHunt: 214, hearingRadius: 640, waypointIdx: 0, targetX: 640, targetY: 340 })
+            ].slice(0, enemyCount);
+        creatures.forEach(c => { c.hp = c.maxHp = (c.name === 'SUBJECT-89' ? 3 : 2); });
+            Object.assign(player, { hp: 100, sonarMult: 1, noiseMult: 1, cells: 3 });
+            up.sonar = up.decoy = up.damp = 0; stimT = 0; gemCount = 0; shake = 0; deathCause = ''; beams = []; respawnQ = []; kills = 0; killedKade = false; lanceCd = 0;
+            hack = null; hacksDone = 0; ventSpawned = false; logsShown = {}; paused = false; clearHackTimers();
+            keycards.forEach(k => { k.att = 2; k.lockT = 0; k.cool = 0; k.hackOk = false; });
+            const dr = (x1, y1, x2, y2, ph) => ({ x1, y1, x2, y2, x: (x1 + x2) / 2, y: (y1 + y2) / 2, ph, open: true, slide: 1, alpha: 0 });
+            doors = [dr(480, 480, 600, 480, 0), dr(760, 250, 760, 360, 3), dr(990, 620, 1130, 620, 6), dr(1440, 260, 1440, 380, 1.5)];
+            spikes = [[520, 410, 110, 36], [1100, 700, 110, 36], [1860, 540, 140, 36], [600, 1000, 120, 36], [1600, 1300, 140, 36], [230, 1380, 110, 36]]
+                .map(([x, y, w, h]) => ({ x, y, w, h, alpha: 0 }));
+            const mn = (x, y) => ({ x, y, alpha: 0, gone: false });
+            mines = [mn(165, 420), mn(700, 130), mn(1370, 140), mn(2050, 430), mn(1695, 625), mn(500, 1360), mn(2045, 1370), mn(1300, 700), mn(1620, 1190), mn(900, 1050)];
+            gems = [[120, 440], [735, 110], [1415, 110], [2090, 455], [1735, 640], [455, 1385], [2090, 1390]].map(([x, y]) => ({ x, y, alpha: 0, gone: false }));
+            lastProg = performance.now() / 1000; lastRoom = -1;
+            $('tipBox').classList.add('hidden'); $('logBox').classList.add('hidden'); $('hackPanel').classList.add('hidden');
+            $('mercyBtn').classList.add('hidden');
+            setTimeout(() => { if (gameState === 'PLAYING') showLog('CONTROL // RADIO', '"Dr. Ellis, you are alive. Sonar is your only light, and every ping is a scream in a tomb. Find three keycards. I will speak when I can."'); }, 1200);
+            updateHUD();
+        };
+        
+        /* ---------- Story ---------- */
+        const LOGS = {
+            alpha: ['LOG ALPHA // DR. KADE', '"Day 41. Project ECHO works. We taught the Chorus to hear through walls. Mara, forgive me: I used your voiceprint as the calibration tone. They are not hunting noise. They are hunting you."'],
+            beta: ['LOG BETA // DR. KADE', '"What I have become still remembers your footsteps. I am not hunting you, Mara. I am trying to reach you before Control finishes the decontamination cycle. Control lied about the airlock."'],
+            gamma: ['LOG GAMMA // CONTROL OVERRIDE', '"Airlock cycle will incinerate Sub-Level 09 on exit. Kade is the only living proof of ECHO. Leave him. Leave them all. Gems? Resonance crystals. Kade needs five to reverse the Chorus."']
+        };
+        const END_A = 'The airlock cycles shut behind you. Sub-Level 09 burns, and with it the last echo of Dr. Kade. You walk into the dawn carrying the truth, and a silence you will never fill.';
+        const END_B = 'Before the airlock cycles, you jack the resonance crystals into the intercom and broadcast Kade\'s reversal tone. The Chorus fall silent. A ruined voice whispers your name in the dark, and finally lets go. You carry ECHO\'s cure into the light.';
+        function showLog(t, s) {
+            clearInterval(logTimer); clearTimeout(logHide);
+            $('logTitle').textContent = t; const el = $('logText'); el.textContent = '';
+            $('logBox').classList.remove('hidden');
+            let i = 0;
+            logTimer = setInterval(() => {
+                el.textContent = s.slice(0, ++i);
+                if (i >= s.length) { clearInterval(logTimer); logHide = setTimeout(() => $('logBox').classList.add('hidden'), Math.max(5000, s.length * 45)); }
+            }, 22);
+        }
+        function progress() { lastProg = performance.now() / 1000; }
+        function onKeyCollected(k) {
+            progress(); collapseVent();
+            const L = LOGS[k.id]; if (L) showLog(L[0], L[1]);
+        }
+        
+        /* ---------- Hazards ---------- */
+        function explode(m) {
+            if (m.gone) return; m.gone = true;
+            audio.playBoom(); shake = 1; progress();
+            emitSonarPulse(m.x, m.y, 340, 'red', false);
+            const d = Math.hypot(player.x - m.x, player.y - m.y);
+            if (d < 170) {
+                player.hp -= d < 75 ? 100 : 60 * (1 - (d - 75) / 95) * (player.hiding ? 0.5 : 1);
+                if (player.hp <= 0) { deathCause = 'Caught in a proximity-mine blast.'; endGame(false); return; }
+            }
+            for (const c of creatures) if (Math.hypot(c.x - m.x, c.y - m.y) < 130) c.stun = 3;
+            alertAll(m.x, m.y, false);
+        }
+        function vis(o, r = 95, base = 0) {
+            const d = Math.hypot(o.x - player.x, o.y - player.y);
+            return Math.max(o.alpha, d < r ? (1 - d / r) * 0.85 : 0, base);
+        }
+        function updateExtras(dt) {
+            const now = performance.now() / 1000, fade = dt / FADE_DURATION;
+            shake = Math.max(0, shake - dt * 2); if (stimT > 0) stimT -= dt;
+        beams.forEach(b => b.t -= dt); beams = beams.filter(b => b.t > 0);
+        tickRespawns(dt);
+            if (player.hp < 100) player.hp = Math.min(100, player.hp + dt * 2.5);
+            const items = [...doors, ...spikes, ...mines, ...gems];
+            items.forEach(o => { o.alpha = Math.max(0, o.alpha - fade); });
+            for (const d of doors) {
+                const open = ((now + d.ph) % 9) < 5;
+                if (open !== d.open) {
+                    d.open = open;
+                    if (Math.hypot(player.x - d.x, player.y - d.y) < 600) { audio.playLockerClank(); emitSonarPulse(d.x, d.y, 150, 'red', false); }
+                }
+                d.slide = Math.max(0, Math.min(1, d.slide + (open ? 1 : -1) * dt * 2));
+            }
+            for (const p of sonarPulses) {
+                for (const o of items) if (!o.gone && Math.abs(Math.hypot(o.x - p.x, o.y - p.y) - p.radius) <= 26) o.alpha = 1;
+                if (p.colorType === 'red' || p.maxRadius < 180) continue;
+                for (const m of mines) {
+                    if (m.gone) continue;
+                    const d = Math.hypot(m.x - p.x, m.y - p.y);
+                    if (d < 160 && d <= p.radius + 26) explode(m);
+                }
+            }
+            if (!player.hiding) {
+                for (const m of mines) if (!m.gone && Math.hypot(m.x - player.x, m.y - player.y) < 24) explode(m);
+                for (const s of spikes) {
+                    if (Math.abs(player.x - s.x) < s.w / 2 + 7 && Math.abs(player.y - s.y) < s.h / 2 + 7) {
+                        deathCause = 'Impaled on containment floor spikes.'; shake = 1; audio.playMonsterRoar(); endGame(false); return;
+                    }
+                }
+                for (const g of gems) if (!g.gone && Math.hypot(g.x - player.x, g.y - player.y) < 28) {
+                    g.gone = true; gemCount++; progress(); audio.playKeycardPickup(); emitSonarPulse(g.x, g.y, 260, 'cyan', false);
+                    if (!logsShown.gem) { logsShown.gem = 1; showLog('CONTROL // RADIO', '"Resonance crystal. Kade\'s notes say five of them can... never mind. Spend them at the field store [S]."'); }
+                }
+            }
+            // Keycard terminals -> hacking
+            keycards.forEach(k => { k.cool = Math.max(0, k.cool - dt); k.lockT = Math.max(0, k.lockT - dt); });
+            if (!hack && !player.hiding) {
+                for (const k of keycards) if (!k.collected && !k.hackOk && !k.cool && !k.lockT && Math.hypot(player.x - k.x, player.y - k.y) < 34) { startHack(k); break; }
+            }
+            if (hack && Math.hypot(player.x - hack.k.x, player.y - hack.k.y) > 150) closeHack(true);
+            // Stuck detection -> tip
+            const room = Math.floor(player.x / 550) + 10 * Math.floor(player.y / 500);
+            if (room !== lastRoom) { lastRoom = room; progress(); }
+            if (now - lastProg > 25 && !hack) { progress(); showTip(); }
+            $('gemTxt').textContent = gemCount; $('hpTxt').textContent = Math.ceil(player.hp); $('hostTxt').textContent = creatures.length + (respawnQ.length ? ' (+' + respawnQ.length + ')' : ''); $('cellTxt').textContent = player.cells;
+        }
+        function renderExtras() {
+        renderCombat();
+            for (const s of spikes) {
+                const a = vis(s, 100, 0.07); if (a < 0.02) continue;
+                ctx.save(); ctx.strokeStyle = `rgba(255,30,66,${a})`; ctx.fillStyle = `rgba(255,30,66,${a * 0.15})`; ctx.lineWidth = 1.6;
+                ctx.fillRect(s.x - s.w / 2, s.y - s.h / 2, s.w, s.h); ctx.strokeRect(s.x - s.w / 2, s.y - s.h / 2, s.w, s.h);
+                ctx.beginPath();
+                for (let x = s.x - s.w / 2; x < s.x + s.w / 2 - 6; x += 12) { ctx.moveTo(x, s.y + s.h / 2); ctx.lineTo(x + 6, s.y - s.h / 2 + 4); ctx.lineTo(x + 12, s.y + s.h / 2); }
+                ctx.stroke();
+                if (a > 0.4) { ctx.font = '10px "Share Tech Mono"'; ctx.fillStyle = `rgba(255,30,66,${a})`; ctx.textAlign = 'center'; ctx.fillText('SPIKES', s.x, s.y - s.h / 2 - 5); }
+                ctx.restore();
+            }
+            for (const m of mines) {
+                if (m.gone) continue; const a = vis(m, 90, 0.05); if (a < 0.02) continue;
+                ctx.save(); ctx.translate(m.x, m.y);
+                ctx.strokeStyle = `rgba(255,183,0,${a})`; ctx.lineWidth = 1.8;
+                ctx.beginPath(); ctx.arc(0, 0, 9, 0, 6.283); ctx.stroke();
+                if (Math.sin(performance.now() / 180) > 0) { ctx.fillStyle = `rgba(255,30,66,${Math.min(1, a + 0.3)})`; ctx.beginPath(); ctx.arc(0, 0, 3, 0, 6.283); ctx.fill(); }
+                if (a > 0.4) { ctx.font = '10px "Share Tech Mono"'; ctx.fillStyle = `rgba(255,183,0,${a})`; ctx.textAlign = 'center'; ctx.fillText('MINE', 0, -15); }
+                ctx.restore();
+            }
+            for (const g of gems) {
+                if (g.gone) continue; const a = vis(g, 100, 0.14);
+                ctx.save(); ctx.translate(g.x, g.y); const sc = 1 + Math.sin(performance.now() / 300) * 0.1; ctx.scale(sc, sc);
+                ctx.strokeStyle = `rgba(232,121,249,${a})`; ctx.fillStyle = `rgba(232,121,249,${a * 0.3})`; ctx.shadowColor = '#e879f9'; ctx.shadowBlur = 10 * a; ctx.lineWidth = 2;
+                ctx.beginPath(); ctx.moveTo(0, -10); ctx.lineTo(8, 0); ctx.lineTo(0, 10); ctx.lineTo(-8, 0); ctx.closePath(); ctx.fill(); ctx.stroke();
+                ctx.restore();
+            }
+            for (const d of doors) {
+                const a = vis(d, 120, 0.16), k = (1 - d.slide) / 2, dx = d.x2 - d.x1, dy = d.y2 - d.y1;
+                ctx.save(); ctx.lineWidth = 7; ctx.lineCap = 'butt';
+                ctx.strokeStyle = d.slide < 0.5 ? `rgba(255,183,0,${a})` : `rgba(0,243,255,${a * 0.7})`;
+                ctx.beginPath(); ctx.moveTo(d.x1, d.y1); ctx.lineTo(d.x1 + dx * k, d.y1 + dy * k);
+                ctx.moveTo(d.x2, d.y2); ctx.lineTo(d.x2 - dx * k, d.y2 - dy * k); ctx.stroke();
+                if (a > 0.4) { ctx.font = '10px "Share Tech Mono"'; ctx.fillStyle = `rgba(255,183,0,${a})`; ctx.textAlign = 'center'; ctx.fillText(d.slide < 0.5 ? 'SEALED' : 'DOOR', d.x + (dy ? 28 : 0), d.y - (dy ? 0 : 14)); }
+                ctx.restore();
+            }
+        }
+        
+        /* ---------- Keycard hacking (memory-sequence mini-puzzle, 2 attempts) ---------- */
+        const PADS = [['◆', '#00f3ff'], ['▲', '#00ff88'], ['●', '#ffb700'], ['■', '#ff1e42']];
+        function clearHackTimers() { hackTimers.forEach(clearTimeout); hackTimers = []; }
+        function startHack(k) {
+            hack = { k, seq: [], pos: 0, phase: 'show' };
+            if (!ventSpawned) { ventSpawned = true; spawnVent(k); }
+            $('hackTitle').textContent = `TERMINAL ${k.symbol} // ${k.id.toUpperCase()} — MEMORY HACK`;
+            $('hackPads').innerHTML = PADS.map((p, i) => `<button id="pad${i}" onclick="padClick(${i})" class="hud-btn py-3 rounded text-xl font-bold" style="color:${p[1]};border-color:${p[1]}88">${p[0]}</button>`).join('');
+            $('hackPanel').classList.remove('hidden');
+            audio.init(); audio.tone(660); nextSeq();
+        }
+        function nextSeq() {
+            clearHackTimers(); const h = hack; if (!h) return;
+            h.seq = Array.from({ length: 3 + hacksDone }, () => Math.floor(Math.random() * 4)); h.pos = 0; h.phase = 'show';
+            $('hackMsg').textContent = 'MEMORIZE THE SEQUENCE…'; renderAttempts();
+            h.seq.forEach((v, i) => hackTimers.push(setTimeout(() => flashPad(v), 700 + i * 650)));
+            hackTimers.push(setTimeout(() => { if (hack) { hack.phase = 'input'; $('hackMsg').textContent = 'REPEAT IT — click the nodes'; } }, 700 + h.seq.length * 650));
+        }
+        function renderAttempts() { $('hackAtt').textContent = '● '.repeat(hack.k.att).trim() + ' ' + '○'.repeat(2 - hack.k.att); }
+        function flashPad(i) {
+            const b = $('pad' + i); if (!b) return;
+            b.style.boxShadow = `0 0 18px ${PADS[i][1]}`; b.style.background = PADS[i][1] + '55';
+            audio.tone(400 + i * 160, 0.18, 'sine');
+            setTimeout(() => { b.style.boxShadow = ''; b.style.background = ''; }, 300);
+        }
+        function padClick(i) {
+            if (!hack || hack.phase !== 'input') return;
+            audio.init(); flashPad(i);
+            if (i === hack.seq[hack.pos]) { if (++hack.pos >= hack.seq.length) hackWin(); } else hackFail();
+        }
+        function hackFail() {
+            const k = hack.k; k.att--; hack.phase = 'dead'; clearHackTimers();
+            audio.tone(120, 0.4, 'sawtooth', 0.12); renderAttempts();
+            if (k.att <= 0) {
+                k.att = 2; k.lockT = 15; emitSonarPulse(k.x, k.y, 700, 'green', true); alertAll(k.x, k.y);
+                $('hackMsg').textContent = 'ACCESS DENIED — ALARM! TERMINAL LOCKED 15s';
+                hackTimers.push(setTimeout(() => closeHack(false), 1500));
+            } else {
+                $('hackMsg').textContent = 'WRONG NODE — 1 ATTEMPT LEFT';
+                hackTimers.push(setTimeout(nextSeq, 1100));
+            }
+        }
+        function hackWin() {
+            const k = hack.k; hack.phase = 'dead'; clearHackTimers(); k.hackOk = true; hacksDone++;
+            $('hackMsg').textContent = 'ACCESS GRANTED'; audio.playKeycardPickup();
+            collapseVent(); // eject + collapse temp vent; update() collects the card next frame
+            setTimeout(() => { if (hack && hack.k === k) closeHack(false); }, 500);
+        }
+        function closeHack(abort) {
+            clearHackTimers();
+            if (abort && hack) hack.k.cool = 2;
+            hack = null; keys = {}; paused = false; // explicit unpause: game never stays frozen after a hack
+            $('hackPanel').classList.add('hidden');
+        }
+        function spawnVent(k) {
+            for (let a = 0; a < 16; a++) {
+                const ang = a * Math.PI / 8, x = k.x + Math.cos(ang) * 72, y = k.y + Math.sin(ang) * 72;
+                if (x < 120 || y < 120 || x > WORLD_W - 120 || y > WORLD_H - 120) continue;
+                if (wallBoxes.some(w => distToSegment(x, y, w.x1, w.y1, w.x2, w.y2).dist < 34)) continue;
+                lockers.push({ x, y, w: 38, h: 38, alpha: 1, occupied: false, temp: true });
+                emitSonarPulse(x, y, 180, 'green', false);
+                showLog('SYSTEM', 'EMERGENCY VENT DEPLOYED nearby. Press [F] beside it to hide while you hack. It will collapse once the card is secured.');
+                return;
+            }
+        }
+        function collapseVent() {
+            const i = lockers.findIndex(l => l.temp); if (i < 0) return;
+            const v = lockers[i];
+            if (player.hiding && player.lockerRef === v) { player.hiding = false; player.lockerRef = null; }
+            emitSonarPulse(v.x, v.y, 160, 'red', false); shake = 0.4; audio.playLockerClank();
+            lockers.splice(i, 1); updateHUD();
+        }
+        
+        /* ---------- Tips for stuck players ---------- */
+        function showTip() {
+            const hunted = creatures.some(c => c.state === 'HUNTING');
+            let t;
+            if (hunted) t = 'HUNTED: break line of sight, crouch [C] to go quiet, throw a decoy [E] far from you, or seal yourself in a pod [F].';
+            else if (tipIdx++ % 2) t = 'HAZARDS: mines trip on footsteps and pings within ~150px, so crouch [C] near them. Spike strips are lethal. Doors cycle open and shut, so wait.';
+            else {
+                const k = keycards.find(c => !c.collected);
+                if (k) {
+                    const ang = Math.atan2(k.y - player.y, k.x - player.x), dir = ['E', 'SE', 'S', 'SW', 'W', 'NW', 'N', 'NE'][(Math.round(ang / (Math.PI / 4)) + 8) % 8];
+                    t = `OBJECTIVE: Terminal ${k.symbol} ${k.id.toUpperCase()} lies to the ${dir}. Ping once, then crouch-walk. Gems can buy upgrades in the store [S].`;
+                } else t = 'EXIT: the airlock is south-center. Move only when the corridor is silent.';
+            }
+            $('tipText').textContent = t; $('tipBox').classList.remove('hidden');
+            audio.tone(880, 0.1, 'sine', 0.05);
+            clearTimeout(tipTimer); tipTimer = setTimeout(() => $('tipBox').classList.add('hidden'), 8000);
+        }
+        
+        /* ---------- Store ---------- */
+        const SHOP = [
+            { n: 'SONAR RANGE BOOSTER', d: '+30% ping reach (max 3)', c: 2, can: () => up.sonar < 3, buy() { up.sonar++; player.sonarMult = 1 + 0.3 * up.sonar; } },
+            { n: 'DECOY CAPACITY UPGRADE', d: '+2 radio slots and refill (max 2)', c: 3, can: () => up.decoy < 2, buy() { up.decoy++; player.maxDecoys += 2; player.decoys = player.maxDecoys; } },
+            { n: 'SPEED STIM', d: '+35% move speed for 30s', c: 2, can: () => true, buy() { stimT = 30; } },
+            { n: 'NOISE DAMPENER', d: '-30% footstep noise radius (max 2)', c: 3, can: () => up.damp < 2, buy() { up.damp++; player.noiseMult = 1 - 0.3 * up.damp; } },
+        { n: 'LANCE CELL PACK', d: '+2 Sonic Lance cells (max 6)', c: 2, can: () => player.cells < 6, buy() { player.cells = Math.min(6, player.cells + 2); } }
+        ];
+        function renderStore() {
+            $('storeGems').textContent = gemCount;
+            $('storeItems').innerHTML = SHOP.map((s, i) => {
+                const ok = gemCount >= s.c && s.can();
+                return `<button onclick="buyItem(${i})" class="hud-btn w-full text-left px-3 py-2 rounded flex justify-between items-center ${ok ? '' : 'opacity-40'}"><span><b class="text-cyan-200">[${i + 1}] ${s.n}</b><br><span class="text-[11px] text-cyan-100/60">${s.d}</span></span><span class="text-fuchsia-300 font-bold">&#9670; ${s.c}</span></button>`;
+            }).join('');
+        }
+        function buyItem(i) {
+            const s = SHOP[i]; if (!s || gemCount < s.c || !s.can()) { audio.tone(140, 0.2, 'sawtooth', 0.08); return; }
+            gemCount -= s.c; s.buy(); audio.playKeycardPickup(); updateHUD(); renderStore();
+        }
+        function openStore() { if (gameState !== 'PLAYING' || paused) return; paused = true; renderStore(); $('storeModal').classList.remove('hidden'); }
+        function closeStore() { $('storeModal').classList.add('hidden'); paused = false; keys = {}; }
+        
+        /* ---------- Restart confirmation ---------- */
+        function askRestart() {
+            if (gameState !== 'PLAYING') { startGameFromModal(); return; }
+            if (paused) return; paused = true; $('confirmModal').classList.remove('hidden');
+        }
+        function cancelRestart() { $('confirmModal').classList.add('hidden'); paused = false; keys = {}; }
+        function confirmRestart() { $('confirmModal').classList.add('hidden'); startGameFromModal(); }
+        const _startGame = startGameFromModal;
+        startGameFromModal = function () {
+            closeHack(false); $('storeModal').classList.add('hidden'); $('confirmModal').classList.add('hidden');
+            paused = false; keys = {}; _startGame();
+        };
+        
+        /* ---------- Mercy system + endings ---------- */
+        const _endGame = endGame;
+        endGame = function (victory) {
+            if (gameState !== 'PLAYING') return;
+            closeHack(false); $('tipBox').classList.add('hidden'); $('logBox').classList.add('hidden'); $('storeModal').classList.add('hidden');
+            _endGame(victory);
+            const sub = $('modalSubtitle'), mb = $('mercyBtn');
+            mb.classList.add('hidden');
+            if (victory) {
+                const good = gemCount >= 5 && !killedKade;
+                if (good) $('modalTitle').textContent = 'THE CHORUS FALLS SILENT';
+                sub.innerHTML = (killedKade ? END_C : good ? END_B : END_A) + `<br><span class="text-fuchsia-300">Crystals recovered: ${gemCount}</span>`;
+            } else {
+                deaths++;
+                sub.innerHTML += `<br><span class="text-rose-300">${deathCause || 'Your acoustic signature was triangulated.'}</span>`;
+                deathCause = '';
+                if (deaths >= 3 && enemyCount > 1) {
+                    mb.textContent = `MERCY PROTOCOL: DISABLE 1 HOSTILE (${enemyCount} → ${enemyCount - 1}) & RETRY`;
+                    mb.classList.remove('hidden');
+                }
+            }
+        };
+        $('mercyBtn').addEventListener('click', () => { enemyCount = Math.max(1, enemyCount - 1); deaths = 0; startGameFromModal(); });
+        
+        /* ---------- Key handling (capture phase so modals fully own input) ---------- */
+        window.addEventListener('keydown', e => {
+            if (!$('confirmModal').classList.contains('hidden')) {
+                if (e.code === 'Enter' || e.code === 'KeyY') confirmRestart(); else if (e.code === 'Escape' || e.code === 'KeyN' || e.code === 'KeyR') cancelRestart();
+                e.stopImmediatePropagation(); e.preventDefault(); return;
+            }
+            if (!$('storeModal').classList.contains('hidden')) {
+                if (e.code === 'Escape' || e.code === STORE_KEY) closeStore(); else if (/^Digit[1-5]$/.test(e.code)) buyItem(+e.code[5] - 1);
+                e.stopImmediatePropagation(); e.preventDefault(); return;
+            }
+            if (gameState === 'PLAYING') {
+                if (e.code === STORE_KEY && !e.repeat) { openStore(); e.stopImmediatePropagation(); return; }
+            if (e.code === 'KeyQ' && !e.repeat) { fireLance(); e.stopImmediatePropagation(); return; }
+                if (e.code === 'Escape' && hack) closeHack(true);
+            }
+        }, true);
+        
+                /* ---------- Eerie procedural music (Web Audio, no assets) ---------- */
+        const _sad = SoundEngine.prototype.startAmbientDrone;
+        SoundEngine.prototype.startAmbientDrone = function () { _sad.call(this); this.startMusic(); };
+        const _tm = SoundEngine.prototype.toggleMute;
+        SoundEngine.prototype.toggleMute = function () {
+            const m = _tm.call(this);
+            if (this.musicGain) this.musicGain.gain.setTargetAtTime(m ? 0 : 0.55, this.ctx.currentTime, 0.2);
+            return m;
+        };
+        SoundEngine.prototype.startMusic = function () {
+            const c = this.ctx;
+            this.musicGain = c.createGain(); this.musicGain.gain.value = this.muted ? 0 : 0.55;
+            const dl = c.createDelay(1.5); dl.delayTime.value = 0.55;
+            const fb = c.createGain(); fb.gain.value = 0.5;
+            const lp = c.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1800;
+            this.musicBus = c.createGain();
+            this.musicBus.connect(this.musicGain); this.musicBus.connect(dl);
+            dl.connect(lp); lp.connect(fb); fb.connect(dl); lp.connect(this.musicGain);
+            this.musicGain.connect(c.destination);
+            const roots = [110, 87.31, 73.42, 82.41]; let step = 0, tick = 0;
+            const note = (f, t0, dur, type, vol, det = 0) => {
+                const o = c.createOscillator(), g = c.createGain(), n = c.currentTime + t0;
+                o.type = type; o.frequency.value = f; o.detune.value = det;
+                g.gain.setValueAtTime(0.0001, n); g.gain.linearRampToValueAtTime(vol, n + dur * 0.4); g.gain.exponentialRampToValueAtTime(0.0001, n + dur);
+                o.connect(g); g.connect(this.musicBus); o.start(n); o.stop(n + dur + 0.05);
+            };
+            const chord = () => {
+                const r = roots[step++ % 4];
+                [1, 1.189, 1.498, 2.119].forEach((m, i) => note(r * m, 0, 9, 'triangle', 0.05, (i - 1.5) * 9));
+                note(r / 2, 0, 9, 'sine', 0.09);
+            };
+            chord();
+            this.musicTimer = setInterval(() => {
+                tick++;
+                if (tick % 8 === 0) chord();
+                if (tick % 3 === 0 && Math.random() < 0.8) {
+                    const sc = [440, 466.16, 523.25, 659.25, 698.46, 880];
+                    note(sc[Math.floor(Math.random() * sc.length)], 0, 3.5, 'sine', 0.045);
+                }
+                if (gameState === 'PLAYING' && topState() === 'HUNTING') { // tension layer while hunted
+                    note(110 * (tick % 2 ? 1 : 1.414), 0, 0.9, 'sawtooth', 0.03);
+                    note(55, 0, 1.1, 'sine', 0.1);
+                }
+            }, 1000);
+        };
+        SoundEngine.prototype.playLance = function () {
+            if (!this.ctx || this.muted) return;
+            const n = this.ctx.currentTime, o = this.ctx.createOscillator(), g = this.ctx.createGain();
+            o.type = 'sawtooth'; o.frequency.setValueAtTime(1800, n); o.frequency.exponentialRampToValueAtTime(110, n + 0.28);
+            g.gain.setValueAtTime(0.16, n); g.gain.exponentialRampToValueAtTime(0.001, n + 0.3);
+            o.connect(g); g.connect(this.ctx.destination); o.start(n); o.stop(n + 0.32);
+        };
+        
+        /* ---------- Sonic Lance: directed blast that can kill enemies ---------- */
+        let beams = [], lanceCd = 0, kills = 0, killedKade = false;
+        const END_C = 'Dr. Kade\'s ruined body collapses in the dark, and the airlock cycles shut. You escape, but the Chorus\'s last echo repeats your name, again and again, for the rest of your life.';
+        function segT(x1, y1, x2, y2, x3, y3, x4, y4) {
+            const d = (x2 - x1) * (y4 - y3) - (y2 - y1) * (x4 - x3); if (!d) return null;
+            const t = ((x3 - x1) * (y4 - y3) - (y3 - y1) * (x4 - x3)) / d, u = ((x3 - x1) * (y2 - y1) - (y3 - y1) * (x2 - x1)) / d;
+            return t >= 0 && t <= 1 && u >= 0 && u <= 1 ? t : null;
+        }
+        function fireLance() {
+            if (gameState !== 'PLAYING' || paused || player.hiding) return;
+            const now = performance.now() / 1000; if (now < lanceCd) return;
+            if (player.cells <= 0) { audio.tone(140, 0.2, 'sawtooth', 0.08); showLog('SUIT', 'LANCE CELLS DEPLETED. Buy a cell pack in the store [S] or take one from a fallen Chorus.'); return; }
+            lanceCd = now + 1.0; player.cells--;
+            const ang = Math.atan2(mouseWorld.y - player.y, mouseWorld.x - player.x), R = 420;
+            let ex = player.x + Math.cos(ang) * R, ey = player.y + Math.sin(ang) * R, best = 1;
+            for (const w of wallBoxes.concat(doors.filter(d => d.slide < 0.5))) {
+                const t = segT(player.x, player.y, ex, ey, w.x1, w.y1, w.x2, w.y2); if (t !== null && t < best) best = t;
+            }
+            ex = player.x + (ex - player.x) * best; ey = player.y + (ey - player.y) * best;
+            beams.push({ x1: player.x, y1: player.y, x2: ex, y2: ey, t: 0.25 });
+            audio.playLance(); shake = 0.3;
+            emitSonarPulse(player.x, player.y, 520, 'cyan', true); // the blast is LOUD
+            for (const c of creatures.slice()) if (distToSegment(c.x, c.y, player.x, player.y, ex, ey).dist < c.radius + 12) hitCreature(c);
+            updateHUD();
+        }
+        function hitCreature(c) {
+            c.hp--; c.stun = 2.0; c.alpha = 1; audio.playMonsterRoar();
+            emitSonarPulse(c.x, c.y, 300, 'red', false);
+            if (c.hp > 0) return;
+            creatures = creatures.filter(x => x !== c); kills++; progress();
+        respawnQ.push({ c, t: c.name === 'SUBJECT-89' ? 60 : 30 });
+            audio.playBoom(); shake = 0.8; emitSonarPulse(c.x, c.y, 460, 'red', false);
+            if (c.name === 'SUBJECT-89') {
+                killedKade = true;
+                showLog('LOG // FINAL ECHO', 'The thing that was Kade shudders. Its last echo says your name once. Then silence.');
+            } else if (!c.dropped) { c.dropped = true; player.cells = Math.min(6, player.cells + 1); }
+            updateHUD();
+        }
+        function renderCombat() {
+            for (const b of beams) {
+                ctx.save(); ctx.globalAlpha = Math.max(0, b.t / 0.25); ctx.strokeStyle = '#fff3c4'; ctx.shadowColor = '#ffb700'; ctx.shadowBlur = 18; ctx.lineWidth = 3;
+                ctx.beginPath(); ctx.moveTo(b.x1, b.y1); ctx.lineTo(b.x2, b.y2); ctx.stroke(); ctx.restore();
+            }
+            for (const c of creatures) {
+                const d = Math.hypot(c.x - player.x, c.y - player.y), v = Math.max(c.alpha, d < 105 ? 1 - d / 105 : 0);
+                if (v < 0.15) continue;
+                ctx.save(); ctx.translate(c.x, c.y - c.radius - 16);
+                for (let i = 0; i < c.maxHp; i++) { ctx.fillStyle = `rgba(255,30,66,${i < c.hp ? v : v * 0.2})`; ctx.fillRect((i - (c.maxHp - 1) / 2) * 10 - 3, 0, 6, 4); }
+                if (c.stun > 0) { ctx.fillStyle = `rgba(255,183,0,${v})`; ctx.font = '9px "Share Tech Mono"'; ctx.textAlign = 'center'; ctx.fillText('STUNNED', 0, -4); }
+                ctx.restore();
+            }
+        }
+        canvas.addEventListener('mousedown', e => { if (e.button === 1) { e.preventDefault(); fireLance(); } });
+        
+        
+                /* ---------- Enemy respawn ---------- */
+        let respawnQ = [];
+        function tickRespawns(dt) {
+            for (let i = respawnQ.length - 1; i >= 0; i--) {
+                const r = respawnQ[i]; r.t -= dt; if (r.t > 0) continue;
+                const far = PATROL_WAYPOINTS.map((w, idx) => ({ w, idx, d: Math.hypot(w.x - player.x, w.y - player.y) })).filter(o => o.d > 700);
+                if (!far.length) { r.t = 3; continue; } // wait until a spawn point is safely far from the player
+                const o = far[Math.floor(Math.random() * far.length)], c = r.c, next = PATROL_WAYPOINTS[(o.idx + 1) % PATROL_WAYPOINTS.length];
+                Object.assign(c, { x: o.w.x, y: o.w.y, hp: c.maxHp, state: 'DORMANT', alpha: 0, stun: 0, alertTimer: 0, flow: null, flowKey: -1, waypointIdx: (o.idx + 1) % PATROL_WAYPOINTS.length, targetX: next.x, targetY: next.y });
+                creatures.push(c); respawnQ.splice(i, 1);
+                emitSonarPulse(c.x, c.y, 300, 'red', false); audio.playMonsterRoar();
+                showLog('SYSTEM // BIOSIGNAL', `${c.name} has reformed somewhere in the facility. It is hunting again.`);
+                updateHUD();
+            }
+        }
+        
+        /* ---------- Decoys: swept wall collision + map bounds (they can no longer leave the map) ---------- */
+        function moveDecoy(d, dt) {
+            const nx = d.x + d.vx * dt, ny = d.y + d.vy * dt;
+            let best = 1, hit = null;
+            for (const w of wallBoxes.concat(exitDoor.unlocked ? [] : [exitDoor], doors.filter(x => x.slide < 0.5))) {
+                const t = segT(d.x, d.y, nx, ny, w.x1, w.y1, w.x2, w.y2);
+                if (t !== null && t < best) { best = t; hit = w; }
+            }
+            if (hit) { // stop short of the wall and bounce back with damping
+                d.x += (nx - d.x) * best * 0.9; d.y += (ny - d.y) * best * 0.9;
+                const len = Math.hypot(hit.x2 - hit.x1, hit.y2 - hit.y1) || 1, nX = -(hit.y2 - hit.y1) / len, nY = (hit.x2 - hit.x1) / len;
+                const dot = d.vx * nX + d.vy * nY;
+                d.vx = (d.vx - 2 * dot * nX) * 0.35; d.vy = (d.vy - 2 * dot * nY) * 0.35;
+            } else { d.x = nx; d.y = ny; }
+            d.vx *= Math.pow(0.04, dt); d.vy *= Math.pow(0.04, dt);
+            const e = { x: d.x, y: d.y, radius: 8 };
+            resolveWallCollisions(e, 6); d.x = e.x; d.y = e.y;
+            d.x = Math.max(100, Math.min(WORLD_W - 100, d.x)); d.y = Math.max(100, Math.min(WORLD_H - 100, d.y));
+        }
+        
+        
+        $('modalSubtitle').innerHTML = 'Three days ago <strong>Project ECHO</strong> failed and Sub-Level 09 went dark. You are <strong>Dr. Mara Ellis</strong>, the acoustic engineer who built its sonar. Your colleague Dr. Kade is now <span class="text-rose-400 font-semibold">Subject-89</span>, blind and hunting by sound, with his <em>Chorus</em> at his side. A voice on the radio claims it can get you out, if you recover the three keycards. Use your <strong>Acoustic Sonar Emitter</strong> to map the dark. Not everything you hear is the truth.';
+        
+
+        /**************************************************************************
+         * 10. INITIALIZATION & ANIMATION LOOP
+         **************************************************************************/
+        let lastFrameTime = performance.now();
+        function gameLoop(now) {
+            const dt = Math.min(0.05, (now - lastFrameTime) / 1000);
+            lastFrameTime = now;
+
+            update(dt);
+            render();
+            requestAnimationFrame(gameLoop);
+        }
+
+        window.onload = function () {
+            initGame();
+            requestAnimationFrame(gameLoop);
+        };
+    </script>
+</body>
+</html>
